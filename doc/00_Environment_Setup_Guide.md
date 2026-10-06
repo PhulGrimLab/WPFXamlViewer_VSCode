@@ -21,7 +21,7 @@
 | Windows 10/11 x64 | 필수 | WPF 렌더 호스트 실행 | Windows 11 Pro ✔ |
 | **.NET SDK 10.x** | 필수 | 호스트(`net10.0-windows`, WPF) 빌드/테스트 | 10.0.400 ✔ |
 | VS Code | 필수 | 확장 실행/디버깅 | 1.136.1 ✔ |
-| **Node.js LTS + npm** | 필수 | 확장(TypeScript) 빌드, 테스트, `vsce` 패키징 | **❌ 미설치** |
+| **Node.js LTS + npm** | 필수 | 확장(TypeScript) 빌드, 테스트, `vsce` 패키징 | 설치함(2026-10-06): Node 24.19.0 / npm 11.17.0 ✔ |
 | git | 필수 | 형상관리 | ✔ |
 | Visual Studio 2019/2026 | **불필요** | — (이 머신에는 둘 다 있으나 의존하지 않는다) | 있음(미사용) |
 
@@ -42,9 +42,9 @@
   **프레임워크 종속(framework-dependent)** 배포를 기본으로 한다(사용자 PC에 .NET 10 Desktop Runtime 필요).
   Self-contained 번들은 용량(수십~100MB+)이 커서 보류 — 선택지는 01 문서 §7 확인 항목.
 
-## 4. Node.js 설치 (미설치 상태 → 조치 필요)
+## 4. Node.js 설치 (새 PC에서 없을 때)
 
-자동 설치는 하지 않고 사용자가 직접 실행한다(`!` 접두사로 이 세션에서 실행 가능).
+자동 설치는 하지 않고 사용자가 직접 실행한다(`!` 접두사로 이 세션에서 실행 가능). 이 개발 머신에는 이미 설치했다.
 
 ```
 winget install OpenJS.NodeJS.LTS
