@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="XamlRenderHost.Tests/XamlRenderHost.Tests.csproj" />
+  <Project Path="XamlRenderHost/XamlRenderHost.csproj" />
+</Solution>

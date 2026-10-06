@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    WPF XAML 렌더 호스트. 창이 없는 콘솔형 exe(stdin/stdout 프로토콜)이며 WPF 렌더링에만 UseWPF를 쓴다.
+    VS 없이 `dotnet build`로 빌드한다(doc/00 3절). x64 고정, 프레임워크 종속 배포가 기본.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AssemblyName>XamlRenderHost</AssemblyName>
+    <RootNamespace>XamlRenderHost</RootNamespace>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+</Project>
