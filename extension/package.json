@@ -1,0 +1,52 @@
+{
+  "name": "wpf-xaml-viewer",
+  "displayName": "WPF XAML Viewer",
+  "description": "VS Code에서 WPF XAML을 실제 WPF 렌더링으로 미리보기 (Windows 전용)",
+  "version": "0.1.0",
+  "publisher": "phulgrimlab",
+  "license": "SEE LICENSE IN ../LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PhulGrimLab/WPFXamlViewer_VSCode.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "os": [
+    "win32"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:xml",
+    "onCommand:wpfXamlViewer.openPreview"
+  ],
+  "main": "./out/src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "wpfXamlViewer.openPreview",
+        "title": "WPF XAML: Open Preview"
+      }
+    ]
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "신뢰되지 않은 폴더에서는 프로젝트 DLL을 불러오지 않고 사용자 정의 컨트롤을 자리표시자로 표시합니다."
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "pretest": "npm run compile",
+    "test": "mocha \"out/test/unit/**/*.test.js\""
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "mocha": "^11.0.0",
+    "typescript": "^5.6.0"
+  }
+}

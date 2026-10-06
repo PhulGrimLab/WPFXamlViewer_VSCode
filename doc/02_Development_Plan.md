@@ -47,6 +47,14 @@ WPFXamlViewer_VSCode/
 | 0.4 | extension 스캐폴딩(activate 시 로그 1줄) + mocha 1개 | `npm test`(unit) 통과, F5 없이 `npm run compile` 성공 |
 | 0.5 | `tools/ci/ci.ps1`: host 테스트 + extension 테스트 일괄 실행 | 한 번의 명령으로 양쪽 통과 |
 
+#### M0 결과 (2026-10-06, 전 항목 검증 통과)
+- 0.1 `doc/check_environment.ps1`: 전 항목 OK. 0.3 `doc/run_tests.ps1`: 호스트 테스트 3/3. 0.4 `npm test`: 확장 단위 3/3.
+  0.5 `tools/ci/ci.ps1` 한 번으로 양쪽 통과(통합 테스트는 M3 전이라 건너뜀 안내). 0.2 `git status`에 산출물 미노출.
+- **실측 함정**: WPF 프로젝트(`UseWPF`)는 `ImplicitUsings`에서 `System.IO`가 빠진다 → 코드에 `using System.IO;`를 명시해야 한다.
+- **알려진 사항**: `npm audit`가 개발 의존성(mocha → diff, serialize-javascript)에 취약점 3건(low 1/moderate 1/high 1)을 보고한다.
+  테스트 도구 내부이며 `.vsix`에 포함되지 않는다. `npm audit fix`로는 해결되지 않고 mocha major 변경(`--force`)이 필요해 보류.
+  M6 패키징 전에 mocha 최신 버전으로 재검토한다.
+
 ### M1. 렌더 호스트 핵심 (CLI 모드)
 | # | 단계 | 검증 |
 |---|---|---|
