@@ -1,12 +1,13 @@
 using System.IO;
-using System.Windows.Media;
+using XamlRenderHost.Logging;
+using XamlRenderHost.Protocol;
 using XamlRenderHost.Rendering;
 
 namespace XamlRenderHost;
 
 /// <summary>
-/// 진입점. 현재 지원 명령: `--version`, `render --in a.xaml --out a.png [--width N] [--height N] [--dpi N]`.
-/// (stdin/stdout 프로토콜 루프는 M2에서 추가한다.)
+/// 진입점. 지원 명령: `--version`, `render --in a.xaml --out a.png [--width N] [--height N] [--dpi N]`(진단용 CLI),
+/// `serve [--log-dir D] [--log-level L]`(확장이 사용하는 stdin/stdout JSON 프로토콜 모드).
 /// stdout은 프로토콜 전용이므로(doc/01 3.1) 사람이 읽는 출력은 `--version` 같은 진단 명령에서만 쓰고,
 /// 오류/사용법은 stderr로만 쓴다.
 /// </summary>
@@ -17,7 +18,7 @@ public static class Program
     private const int ExitUsage = 2;
 
     private const string UsageText =
-        "usage: XamlRenderHost --version | render --in <file.xaml> --out <file.png> [--width N] [--height N] [--dpi N]";
+        "usage: XamlRenderHost --version | render --in <file.xaml> --out <file.png> [--width N] [--height N] [--dpi N] | serve [--log-dir <dir>] [--log-level Debug|Info|Warn|Error]";
 
     /// <summary>
     /// 인자를 해석해 종료 코드를 돌려준다. WPF 렌더링을 위해 STA 스레드에서 실행된다.
@@ -38,12 +39,61 @@ public static class Program
         {
             return RunRenderCommand(args);
         }
+        else if (args.Length > 0 && args[0] == "serve")
+        {
+            return RunServeCommand(args);
+        }
         else
         {
             // 알 수 없는 인자: stderr로만 안내한다(stdout 오염 방지).
             Console.Error.WriteLine(UsageText);
             return ExitUsage;
         }
+    }
+
+    /// <summary>
+    /// `serve` 명령: stdin/stdout 줄 단위 JSON 프로토콜 루프를 실행한다(확장이 이 모드로 호스트를 띄운다).
+    /// 옵션: `--log-dir &lt;폴더&gt;`(없으면 파일 로그 없음), `--log-level Debug|Info|Warn|Error`(기본 Info).
+    /// 종료 코드: 정상 종료(shutdown/EOF) 0, 사용법 오류 2.
+    /// </summary>
+    private static int RunServeCommand(string[] args)
+    {
+        var options = ParseOptions(args.Skip(1).ToArray());
+        if (options == null)
+        {
+            Console.Error.WriteLine(UsageText);
+            return ExitUsage;
+        }
+        else
+        {
+            // 옵션 형식 정상.
+        }
+
+        var level = LogLevel.Info;
+        if (options.TryGetValue("--log-level", out var levelText) && !Enum.TryParse(levelText, ignoreCase: true, out level))
+        {
+            Console.Error.WriteLine($"알 수 없는 --log-level: {levelText}");
+            return ExitUsage;
+        }
+        else
+        {
+            // 지정하지 않았거나 올바른 값.
+        }
+
+        ILogSink? sink = options.TryGetValue("--log-dir", out var logDir) ? new FileLogSink(logDir) : null;
+        using var logger = new HostLogger(sink, level);
+        var testHooks = Environment.GetEnvironmentVariable(ProtocolConstants.TestHooksEnvVar) == "1";
+        logger.Log(LogLevel.Info, LogIds.HostStarted,
+            $"version={HostInfo.Version} protocol={HostInfo.ProtocolVersion} pid={Environment.ProcessId} clr={Environment.Version} level={level} testHooks={testHooks}");
+
+        // stdout은 프로토콜 전용: BOM 없는 UTF-8, 줄바꿈은 \n 고정.
+        using var input = new StreamReader(Console.OpenStandardInput(), new System.Text.UTF8Encoding(false));
+        using var output = new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { NewLine = "\n" };
+        var handler = new RequestHandler(logger, testHooks);
+        var reason = new ProtocolLoop(input, output, handler, logger).Run();
+
+        logger.Log(LogLevel.Info, LogIds.HostStopped, $"reason={reason} requests={handler.HandledCount}");
+        return ExitOk;
     }
 
     /// <summary>`render` 명령: 파일을 읽어 렌더하고 PNG 파일로 저장한다. 실패 시 한 줄 오류를 stderr에 쓴다.</summary>

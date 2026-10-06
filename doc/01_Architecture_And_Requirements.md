@@ -72,7 +72,11 @@ VS Code에서 `.xaml` 파일을 편집하는 동안 **실제 WPF가 그리는 �
 요청: `{"id":1,"method":"render","params":{"xaml":"...","filePath":"...","width":800,"height":600,"dpi":96}}`
 응답: `{"id":1,"ok":true,"result":{"png":"<base64>","width":800,"height":600,"elements":[{"id":"e3","line":12,"col":5,"x":0,"y":0,"w":100,"h":30}],"warnings":[...]}}`
 오류: `{"id":1,"ok":false,"error":{"code":"XamlParse","message":"...","line":12,"col":5}}`
-그 외 메서드: `ping`, `shutdown`. 버전 필드(`protocol`)를 `ping` 응답에 넣어 확장/호스트 불일치를 감지한다.
+그 외 메서드: `ping`(→ `{version, protocol, pid}`), `shutdown`. `ping`의 `protocol`로 확장/호스트 불일치를 감지한다.
+프로토콜 오류 코드: `InvalidRequest`(JSON/형식 오류, `id`는 null), `InvalidParams`, `UnknownMethod`. 렌더 오류 코드는 `XamlRenderException` 참고.
+호스트는 `serve [--log-dir D] [--log-level L]` 모드로 실행한다. 입력 EOF 또는 `shutdown`이면 종료 코드 0.
+**테스트 전용 메서드** `debug.hang`/`debug.crash`는 환경 변수 `XAMLVIEWER_TEST_HOOKS=1`일 때만 동작하고, 아니면 `UnknownMethod`다
+(장애 주입 테스트용 — 사용자 환경에서는 켜지지 않는다).
 
 stdout은 **프로토콜 전용**, 로그는 절대 stdout에 쓰지 않는다(파일/ stderr 사용).
 
@@ -112,7 +116,7 @@ stdout은 **프로토콜 전용**, 로그는 절대 stdout에 쓰지 않는다(�
 | Main(STA) + Dispatcher: 모든 WPF 객체 생성/렌더 | `Program.Main` | 프로세스 전체 | WPF 객체는 이 스레드에서만 접근. 다른 스레드는 `Dispatcher.InvokeAsync`로만 요청 |
 | StdinReader: 줄 읽기/파싱 | `ProtocolLoop` | 프로세스 전체(종료 요청/EOF 시 종료) | `BlockingCollection<Request>`(한 방향 큐)로 Main에 전달 |
 | StdoutWriter: 응답 직렬화/쓰기 | `ProtocolLoop` | 프로세스 전체 | `BlockingCollection<string>`(bounded)로 수신, stdout 핸들은 이 스레드만 사용 |
-| LogWriter: 파일 로그 | `HostLogger` | 프로세스 전체 | 논블로킹 bounded 큐. 가득 차면 **오래된 Debug 로그부터 버림**(렌더 경로가 파일 I/O를 기다리지 않음) |
+| LogWriter: 파일 로그 | `HostLogger` | 프로세스 전체 | 논블로킹 bounded 큐(기본 1024줄). 가득 차면 **새 로그를 버리고 개수를 세어 H090으로 한 줄 남김**(렌더 경로가 파일 I/O를 기다리지 않음). 구현 단순화를 위해 초안의 "오래된 Debug부터 버림"에서 변경 |
 
 확장 쪽(Node)은 단일 스레드 이벤트 루프이므로 `HostClient`가 요청 id → Promise 맵과 타임아웃 타이머의
 **소유자**이며, 패널 dispose 또는 확장 deactivate 시 호스트 `shutdown` → 3초 후 kill 한다.
