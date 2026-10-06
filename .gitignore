@@ -1,0 +1,62 @@
+# Visual Studio / .NET build output
+bin/
+obj/
+.vs/
+.artifact_runtime/
+TestResults/
+.ppt-improve-work/
+outputs/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# NuGet
+packages/
+*.nupkg
+
+# 파이썬 컴파일 캐시 - 스크립트를 실행할 때마다 생기는 산출물이라 커밋하지 않는다.
+# (번들 Python 런타임 안의 .pyc는 배포 자산이라 이미 추적 중이고, .gitignore는 이미
+#  추적 중인 파일에는 영향을 주지 않으므로 그대로 유지된다.)
+__pycache__/
+*.pyc
+
+# Generated test reports (Markdown/JSON/raw log)
+/TestResults/
+
+# Editors
+# 확장 개발에는 F5 실행/빌드 설정(.vscode/launch.json, tasks.json)이 필요하므로 이 둘만 추적한다.
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea/
+
+# VS Code 확장(extension/) 산출물
+node_modules/
+out/
+dist/
+*.vsix
+.vscode-test/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+
+# Office 임시 잠금 파일
+~$*
+
+# 로컬 AI 도구(Codex 등) 임시 렌더링 산출물
+/.codex_tmp/
+/.codex-build/
+
+# 레거시 화면 캡처 등 실제 환자/식별정보가 포함될 수 있는 로컬 참고 자료 (커밋하지 않음)
+/_reference_screenshots/
+
+# Google service account credentials (비밀 키, 절대 커밋하지 않음)
+/Setup/*.json
+/Setup/at-viewer-ui-test.txt
