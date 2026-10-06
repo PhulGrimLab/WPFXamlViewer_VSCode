@@ -11,6 +11,7 @@
 | **T1 호스트 단위** | 전처리, 크기 규칙, 오류 매핑, 프로토콜 파서, HitMap, 로거 | MSTest(`net10.0-windows`) + `dotnet test` | `host/XamlRenderHost.Tests` | 빠름(초) |
 | **T2 호스트 렌더 골든** | XAML → PNG 픽셀 비교 | MSTest + 자체 `ImageComparer` | 같은 프로젝트 | 보통(수십 초) |
 | **T3 확장 단위** | `HostClient`(가짜 호스트), 진단 변환, 디바운스/최신만 처리, 메시지 프로토콜 | mocha(+ts-node 또는 컴파일 후 실행), VS Code 불필요 | `extension/test/unit` | 빠름 |
+| **T3R 확장 + 실제 호스트** | 실제 `XamlRenderHost.exe` + 실제 `HostClient`: 장애 주입(무응답/크래시/거대 XAML), 오류 전달, 로그 순서 | mocha(`npm run test:realhost`), VS Code 불필요 | `extension/test/realhost` | 보통(수 초) |
 | **T4 확장 통합** | 명령 등록, Problems 패널, 문서 편집 → 갱신, 호스트 재시작, 로그 순서 | `@vscode/test-electron`(실제 VS Code, 실제 호스트 exe) | `extension/test/integration` | 느림(분 단위) |
 | **T5 웹뷰 E2E** | 웹뷰가 실제로 이미지를 그렸는지, 클릭 → 줄 이동 | T4 위에서 웹뷰 ↔ 확장 메시지 사용 | 같은 위치 | 느림 |
 
@@ -88,6 +89,11 @@ PS> .\tools\ci\ci.ps1                 # 전부 + 보고서
 - `run_tests.ps1`의 호스트 프로세스 정리 단계: 남은 `XamlRenderHost.exe`를 종료(파일 잠금으로 빌드 실패 방지).
 - 통합 테스트는 VS Code 인스턴스를 띄우므로 **임시 `--user-data-dir`/`--extensions-dir`** 를 사용해 개발자의 실제 환경을 건드리지 않는다.
 - 한글 출력: 스크립트는 UTF-8 BOM, 보고서는 UTF-8.
+
+## 4.1 장애 주입 훅 (M2)
+호스트의 `debug.hang`(응답 없음) / `debug.crash`(종료 코드 99)는 환경 변수 `XAMLVIEWER_TEST_HOOKS=1`일 때만 켜진다.
+꺼져 있으면 `UnknownMethod`이며 이 동작도 테스트로 고정했다. 확장이 사용자 환경에서 이 변수를 설정하는 코드는 없어야 한다.
+`npm run test:realhost`는 호스트 exe가 없으면 **건너뛰지 않고 실패**한다(조용한 건너뜀은 복구 검증 누락을 가린다).
 
 ## 5. 결함 주입과 회귀 규율
 - 버그 보고 → **먼저 재현 테스트** → 수정 → 통과(CLAUDE.md §4).

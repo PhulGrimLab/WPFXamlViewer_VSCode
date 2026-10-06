@@ -3,7 +3,7 @@
     로컬/CI 공용 진입점: 호스트 테스트(T1+T2)와 확장 단위 테스트(T3)를 한 번에 실행한다.
 
 .DESCRIPTION
-    doc/03_Test_Strategy.md 4절. 통합 테스트(T4/T5)는 VS Code 인스턴스가 필요해 -IncludeIntegration으로만 포함한다
+    doc/03_Test_Strategy.md 4절. 순서: 호스트(T1+T2) → 확장 단위(T3) → 확장+실제 호스트(T3R). 통합 테스트(T4/T5)는 VS Code 인스턴스가 필요해 -IncludeIntegration으로만 포함한다
     (M3에서 추가될 `npm run test:integration`).
 
 .PARAMETER IncludeIntegration
@@ -51,6 +51,12 @@ Invoke-Step "확장 단위 테스트 (T3)" {
     } finally {
         Pop-Location
     }
+}
+
+# 실제 호스트 exe + 실제 HostClient 장애 주입 테스트(M2.4). 위 호스트 테스트 단계가 exe를 빌드해 두었다.
+Invoke-Step "확장 + 실제 호스트 테스트 (장애 주입)" {
+    Push-Location $ExtensionDir
+    try { & npm run test:realhost } finally { Pop-Location }
 }
 
 if ($IncludeIntegration) {
