@@ -21,6 +21,7 @@ describe('formatLogLine', () => {
             RequestTimeout: 'E011',
             HostCrashed: 'E012',
             RequestDiscarded: 'E013',
+            HostOutputIgnored: 'E014',
         });
     });
 });

@@ -14,6 +14,8 @@ export const LogId = {
     RequestTimeout: 'E011',
     HostCrashed: 'E012',
     RequestDiscarded: 'E013',
+    /** 호스트 출력 중 해석할 수 없거나 짝이 없는 줄을 무시했다. */
+    HostOutputIgnored: 'E014',
 } as const;
 
 /**
