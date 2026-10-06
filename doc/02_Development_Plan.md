@@ -24,7 +24,7 @@ WPFXamlViewer_VSCode/
 │   ├─ XamlRenderHost.slnx      ← (또는 .sln)
 │   ├─ XamlRenderHost/          ← exe
 │   ├─ XamlRenderHost.Tests/    ← MSTest (T1, T2), dotnet test
-│   └─ Fixtures/                ← 테스트용 .xaml, golden/ PNG
+│       └─ Fixtures/{xaml,golden}/  ← 테스트용 .xaml, 골든 PNG
 ├─ extension/                   ← VS Code 확장 (TypeScript)
 │   ├─ package.json, tsconfig.json
 │   ├─ src/                     ← extension.ts, hostClient.ts, diagnostics.ts, panel/ ...
@@ -62,6 +62,17 @@ WPFXamlViewer_VSCode/
 | 1.2 | 크기 결정 규칙: `Width/Height` 명시 → `d:DesignWidth/Height` → 요청 크기 → 콘텐츠 크기 | 규칙별 단위 테스트(T1) + 골든 |
 | 1.3 | 결정성 확보(SoftwareOnly, 96 DPI, 폰트 고정) | 같은 XAML 5회 렌더 → 바이트 동일 |
 | 1.4 | XAML 오류 → 코드/줄/열을 가진 구조화 오류 | 잘못된 픽스처 8종의 오류 코드/줄 일치(T1) |
+
+#### M1 결과 (2026-10-06, 1.1~1.4 검증 통과)
+- 구현: `Rendering/XamlRenderer`(렌더), `XamlRenderException`(코드/줄/열), `StaRunner`, `Program render --in --out [--width --height --dpi]`.
+- 테스트(호스트 39개 통과): 골든 10종 + 결정성(5회 바이트 동일) + 크기 규칙 8 + 오류 9 + 비교기 4 + CLI 4 + 스모크 3.
+  골든 PNG 4종을 눈으로 확인(Grid 비율/Auto 열, 템플릿 버튼, 글꼴 4종, DrawingImage). 픽스처를 일부러 바꿔 골든이 실제로 실패하고
+  `TestResults/render-diff/`에 expected/actual/diff를 남기는 것도 확인했다.
+- 경로 변경: 픽스처는 `host/XamlRenderHost.Tests/Fixtures/{xaml,golden}` (계획의 `host/Fixtures`에서 변경 — 테스트 프로젝트 옆이 자연스럽다).
+- **실측**: 같은 머신에서 5회 렌더가 바이트 동일(소프트웨어 렌더 + 회색조 텍스트). **다른 머신/OS 버전에서의 일치는 아직 미검증** —
+  Button 같은 기본 컨트롤 룩은 OS 테마에 영향받을 수 있다. 다른 PC에서 `run_tests.ps1`을 돌려 확인 필요(미확인 항목).
+- 오류 줄 번호 규칙: 닫히지 않은 태그는 닫는 태그 줄, 알 수 없는 요소/속성/잘못된 값은 해당 줄, 루트 2개는 두 번째 루트 줄, 비-XML 텍스트는 1줄.
+- 알려진 제한: `Window` 루트는 `UnsupportedRoot`(M4.5에서 지원), `x:Class`/이벤트 핸들러는 전처리 전이라 XamlParse 오류(M4.1).
 
 ### M2. 프로토콜 + 프로세스 관리
 | # | 단계 | 검증 |

@@ -1,0 +1,9 @@
+<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Orientation="Vertical" Width="200" Background="White">
+  <Rectangle Height="30" Fill="Tomato" Margin="4"/>
+  <StackPanel Orientation="Horizontal" Margin="4">
+    <Rectangle Width="40" Height="40" Fill="Gold"/>
+    <Rectangle Width="40" Height="40" Fill="SeaGreen" Margin="8,0,0,0"/>
+    <Rectangle Width="40" Height="40" Fill="RoyalBlue" Margin="8,0,0,0"/>
+  </StackPanel>
+  <Rectangle Height="30" Fill="MediumOrchid" Margin="4"/>
+</StackPanel>

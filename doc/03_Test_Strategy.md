@@ -23,7 +23,7 @@ OS 화면 캡처는 신뢰할 수 없으므로(가려짐, 해상도, 세션) **�
 
 ## 2. T2 골든 이미지 규칙 (CodeAtlas의 baseline 방식 차용)
 
-- 위치: `host/Fixtures/xaml/*.xaml`, 기대 이미지 `host/Fixtures/golden/*.png`.
+- 위치: `host/XamlRenderHost.Tests/Fixtures/xaml/*.xaml`, 기대 이미지 `.../Fixtures/golden/*.png`.
 - 결정성 확보 조건(01 문서 3.2절): SoftwareOnly 렌더, 96 DPI, 고정 폰트, `TextOptions` 고정.
 - 비교: 채널별 허용오차(기본 ±2), 허용 불일치 픽셀 비율(기본 0.1%) — 둘 다 이름 있는 상수.
 - 실패 시 `TestResults/render-diff/<이름>-{expected,actual,diff}.png` 저장.
