@@ -47,6 +47,9 @@ describe('resolveHostExe (I-05)', () => {
     it('환경 변수 재정의가 우선한다', () => {
         assert.strictEqual(resolveHostExe(root, () => true, 'C:\\x\\host.exe'), 'C:\\x\\host.exe');
     });
+    it('재정의 경로가 없으면 다른 후보로 대체하지 않고 undefined', () => {
+        assert.strictEqual(resolveHostExe(root, (p) => p !== 'C:\\x\\host.exe', 'C:\\x\\host.exe'), undefined);
+    });
     it('패키징 위치가 개발 위치보다 우선한다', () => {
         const found = resolveHostExe(root, () => true, undefined);
         assert.ok(found?.includes(path.join('bin', 'host')), found);

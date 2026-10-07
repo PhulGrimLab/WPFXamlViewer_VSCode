@@ -33,9 +33,8 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
     before(async () => {
         const ext = vscode.extensions.getExtension<ExtensionTestApi | undefined>(EXTENSION_ID);
         assert.ok(ext, '확장을 찾을 수 없음');
-        const exported = await ext.activate();
-        assert.ok(exported, '호스트 exe를 찾지 못해 API가 없음(호스트를 먼저 빌드하세요)');
-        api = exported;
+        api = await ext.activate() as ExtensionTestApi;
+        assert.ok(api.hostFound, '호스트 exe를 찾지 못함(호스트를 먼저 빌드하세요)');
 
         const file = path.join(process.env.XAMLVIEWER_TEST_WORKSPACE as string, 'Test.xaml');
         fs.writeFileSync(file, VALID_XAML);
@@ -65,5 +64,22 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         await replaceAll(editor, VALID_XAML);
         await waitUntil(() => vscode.languages.getDiagnostics(editor.document.uri).length === 0);
         assert.ok(api.getPreviewState().renderCount > before);
+    });
+
+    it('I-04 호스트 강제 종료 → 다음 편집에서 자동 복구(E012 후 E010)', async () => {
+        const oldPid = api.getHostPid();
+        assert.ok(oldPid, '호스트가 실행 중이어야 함');
+        process.kill(oldPid);
+        await waitUntil(() => api.getLogLines().some((l) => l.includes('E012')));
+
+        const before = api.getPreviewState().renderCount;
+        await replaceAll(editor, VALID_XAML + '\n');
+        await waitUntil(() => api.getPreviewState().renderCount > before);
+        const newPid = api.getHostPid();
+        assert.ok(newPid && newPid !== oldPid, `새 호스트가 떠야 함 old=${oldPid} new=${newPid}`);
+
+        const lines = api.getLogLines();
+        const crashIndex = lines.findIndex((l) => l.includes('E012'));
+        assert.ok(lines.slice(crashIndex + 1).some((l) => l.includes('E010')), 'E012 이후 E010(재시작) 로그가 있어야 함');
     });
 });

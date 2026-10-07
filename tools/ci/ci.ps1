@@ -64,7 +64,11 @@ if ($IncludeIntegration) {
     if ($pkg.scripts.PSObject.Properties.Name -contains "test:integration") {
         Invoke-Step "확장 통합 테스트 (T4/T5)" {
             Push-Location $ExtensionDir
-            try { & npm run test:integration } finally { Pop-Location }
+            # VS Code가 진행 메시지를 stderr로 내보낸다. $ErrorActionPreference=Stop이면 PowerShell 5.1이 이를 오류로 보고 중단하므로
+            # 이 단계에서만 Continue로 낮추고, 성공 여부는 종료 코드($LASTEXITCODE)로 판단한다.
+            $previousPreference = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            try { & npm run test:integration } finally { $ErrorActionPreference = $previousPreference; Pop-Location }
         }
     } else {
         Write-Host ""

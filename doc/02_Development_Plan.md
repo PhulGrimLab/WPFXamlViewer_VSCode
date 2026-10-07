@@ -103,7 +103,10 @@ WPFXamlViewer_VSCode/
 **M3 결과 (2026-10-07)**
 - 구현: 명령 `Open Preview`, 에디터 옆 웹뷰(nonce CSP), 300ms 디바운스 자동 갱신(`renderLatest`), 상태 표시줄, Problems 진단(줄/열 0-base 변환), 호스트 exe 탐색(`hostLocator.ts`, 없으면 안내 알림).
 - 검증: 확장 단위 29개, 통합 3개(I-01 명령 등록, I-02 웹뷰가 120x40 이미지 회신, I-03 오류→Problems 생성/정상→해제). `npm run test:integration`은 설치된 VS Code(`XAMLVIEWER_VSCODE_EXE`로 변경 가능)와 임시 user-data/extensions 폴더를 쓴다.
-- **미검증/제한**: I-04(호스트 강제 종료 후 복구), I-05(호스트 없음 알림)는 통합 테스트가 없다(I-05는 경로 탐색만 단위 테스트). 환경 변수 재정의만으로는 후보 목록에서 개발 빌드 경로를 제외할 수 없어 통합 테스트로 만들려면 별도 설정이 필요하다. 경고(warnings) 표시는 아직 없다.
+- **추가 (I-04/I-05)**: 통합 테스트 5개가 되었다. I-04는 확장이 띄운 호스트 PID를 `process.kill`로 죽인 뒤 다음 편집에서 새 호스트로 복구되고 로그에 E012 → E010이 순서대로 남는지 확인한다. I-05는 존재하지 않는 `XAMLVIEWER_HOST_EXE`로 **별도 VS Code를 한 번 더 띄워**(스위트별 실행) 안내 알림과 E012 로그, 확장 활성 유지를 확인한다. 테스트용 API(`ExtensionTestApi`: hostFound/getHostPid/getLogLines)를 `activate` 반환값으로 노출한다.
+- **동작 변경**: `XAMLVIEWER_HOST_EXE`가 설정되면 그 경로**만** 쓴다(틀린 경로일 때 다른 호스트로 조용히 대체되지 않게). 단위 테스트로 고정.
+- **CI 수정**: `ci.ps1 -IncludeIntegration`이 VS Code의 stderr 진행 메시지를 PowerShell 5.1이 오류로 취급해 중단되던 문제를 고침(해당 단계만 `Continue`, 종료 코드로 판정).
+- **미검증/제한**: 경고(warnings) 표시는 아직 없다. I-05의 알림은 `showErrorMessage`를 테스트에서 교체해 검증했고 실제 알림 UI 표시는 눈으로 확인하지 않았다. 통합 테스트는 `.vscode-test`에 VS Code 1.140.0을 내려받아 쓴다(인터넷 필요, git 무시됨).
 - 이 PC(Windows 10 Pro 19045)에서 호스트 골든 58개가 통과했다 → 다른 머신 일치 항목(04 문서 6-1)은 2대에서 확인됨.
 
 ### M4. XAML 해석 충실도

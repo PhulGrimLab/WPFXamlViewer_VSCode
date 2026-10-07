@@ -18,13 +18,19 @@ async function main(): Promise<void> {
     const extensionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xamlviewer-ext-'));
     const exe = process.env.XAMLVIEWER_VSCODE_EXE ?? (fs.existsSync(DEFAULT_VSCODE_EXE) ? DEFAULT_VSCODE_EXE : undefined);
 
+    await runSuite('preview', {});
+    // I-05: 존재하지 않는 호스트 경로를 명시한 별도 VS Code 실행.
+    await runSuite('nohost', { XAMLVIEWER_HOST_EXE: path.join(os.tmpdir(), 'no-such-dir', 'XamlRenderHost.exe') });
+
+    async function runSuite(suite: string, env: NodeJS.ProcessEnv): Promise<void> {
     await runTests({
         vscodeExecutablePath: exe,
         extensionDevelopmentPath,
         extensionTestsPath,
-        extensionTestsEnv: { XAMLVIEWER_TEST_WORKSPACE: workspace },
+        extensionTestsEnv: { XAMLVIEWER_TEST_WORKSPACE: workspace, XAMLVIEWER_TEST_SUITE: suite, ...env },
         launchArgs: [workspace, '--user-data-dir', userDataDir, '--extensions-dir', extensionsDir, '--disable-extensions', '--disable-workspace-trust'],
     });
+    }
 }
 
 main().catch((e) => {
