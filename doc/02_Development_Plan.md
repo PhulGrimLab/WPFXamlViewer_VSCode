@@ -100,6 +100,12 @@ WPFXamlViewer_VSCode/
 | 3.3 | 오류 → Problems 패널(줄/열) | `languages.getDiagnostics` 결과가 기대와 일치(T4) |
 | 3.4 | 호스트 미존재/오류 시 안내 메시지 | 호스트 경로 제거 상태에서 오류 알림 + 로그 E010/E012(T4) |
 
+**M3 결과 (2026-10-07)**
+- 구현: 명령 `Open Preview`, 에디터 옆 웹뷰(nonce CSP), 300ms 디바운스 자동 갱신(`renderLatest`), 상태 표시줄, Problems 진단(줄/열 0-base 변환), 호스트 exe 탐색(`hostLocator.ts`, 없으면 안내 알림).
+- 검증: 확장 단위 29개, 통합 3개(I-01 명령 등록, I-02 웹뷰가 120x40 이미지 회신, I-03 오류→Problems 생성/정상→해제). `npm run test:integration`은 설치된 VS Code(`XAMLVIEWER_VSCODE_EXE`로 변경 가능)와 임시 user-data/extensions 폴더를 쓴다.
+- **미검증/제한**: I-04(호스트 강제 종료 후 복구), I-05(호스트 없음 알림)는 통합 테스트가 없다(I-05는 경로 탐색만 단위 테스트). 환경 변수 재정의만으로는 후보 목록에서 개발 빌드 경로를 제외할 수 없어 통합 테스트로 만들려면 별도 설정이 필요하다. 경고(warnings) 표시는 아직 없다.
+- 이 PC(Windows 10 Pro 19045)에서 호스트 골든 58개가 통과했다 → 다른 머신 일치 항목(04 문서 6-1)은 2대에서 확인됨.
+
 ### M4. XAML 해석 충실도
 | # | 단계 | 검증 |
 |---|---|---|

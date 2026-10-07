@@ -41,12 +41,14 @@
     "compile": "tsc -p ./",
     "pretest": "npm run compile",
     "test": "mocha \"out/test/unit/**/*.test.js\"",
-    "test:realhost": "npm run compile && mocha --timeout 30000 \"out/test/realhost/**/*.test.js\""
+    "test:realhost": "npm run compile && mocha --timeout 30000 \"out/test/realhost/**/*.test.js\"",
+    "test:integration": "npm run compile && node out/test/integration/runTest.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^3.1.0",
     "mocha": "^11.0.0",
     "typescript": "^5.6.0"
   }
