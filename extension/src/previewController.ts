@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { PREVIEW_VIEW_TYPE, RENDER_DEBOUNCE_MS } from './constants';
 import { Debouncer } from './debouncer';
 import { toZeroBasedPosition } from './diagnostics';
-import { HostClient, HostRequestError } from './hostClient';
+import { HostClient, HostRequestError, RenderWarning } from './hostClient';
 import { buildPreviewHtml } from './previewHtml';
 import { ToWebviewMessage, parseFromWebview } from './previewMessages';
 
@@ -126,7 +126,7 @@ export class PreviewController implements vscode.Disposable {
 
         this._setStatus('$(sync~spin) XAML 렌더 중', undefined);
         this._post({ type: 'busy' });
-        this._client.renderLatest({ xaml: document.getText() }).then(
+        this._client.renderLatest({ xaml: document.getText(), filePath: document.uri.scheme === 'file' ? document.uri.fsPath : undefined }).then(
             (outcome) => {
                 if (outcome.discarded) {
                     return; // 더 새 요청이 처리 중이므로 상태는 그 요청이 갱신한다.
@@ -136,9 +136,21 @@ export class PreviewController implements vscode.Disposable {
                 this._renderCount++;
                 this._diagnostics.delete(document.uri);
                 this._post({ type: 'image', png: outcome.result.png, width: outcome.result.width, height: outcome.result.height });
-                this._setStatus('$(check) XAML OK', undefined);
+                this._showSuccess(outcome.result.warnings);
             },
             (error: Error) => this._showFailure(document, error));
+    }
+
+    /** 성공 표시: 호스트가 변경/대체한 내용(경고)이 있으면 개수를 보여 주고 툴팁에 목록을 둔다. */
+    private _showSuccess(warnings: RenderWarning[]): void {
+        if (warnings.length === 0) {
+            this._setStatus('$(check) XAML OK', undefined);
+            this._status.tooltip = undefined;
+        } else {
+            this._setStatus(`$(check) XAML OK (경고 ${warnings.length})`, undefined);
+            const lines = warnings.map((w) => `${w.line ? `L${w.line} ` : ''}${w.message}`);
+            this._status.tooltip = lines.join('\n');
+        }
     }
 
     /** 렌더 실패 처리: 호스트 오류는 Problems에, 그 외(타임아웃/크래시/시작 불가)는 알림에 표시한다. */

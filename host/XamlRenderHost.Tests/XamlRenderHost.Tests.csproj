@@ -13,6 +13,11 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
+  <!-- 픽스처 XAML은 런타임에 파일로 읽는 입력이다. WPF가 Page로 컴파일하면 x:Class/해석 불가 타입 픽스처가 빌드 오류가 된다. -->
+  <ItemGroup>
+    <Page Remove="Fixtures\**\*.xaml" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="MSTest" Version="4.0.2" />
   </ItemGroup>

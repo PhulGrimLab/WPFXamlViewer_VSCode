@@ -77,9 +77,10 @@ public class RenderErrorTests
     }
 
     [TestMethod]
-    public void WindowRoot_IsUnsupportedUntilM4_5()
+    public void NonElementRoot_IsUnsupported()
     {
-        var ex = RenderTestHelper.RenderExpectingFailure($"<Window {Ns}/>");
+        // FrameworkElement도 Window도 아닌 객체(브러시)가 루트면 렌더할 수 없다. (Window 루트는 M4.5부터 지원한다.)
+        var ex = RenderTestHelper.RenderExpectingFailure($"<SolidColorBrush {Ns} Color=\"Red\"/>");
         Assert.AreEqual(RenderErrorCodes.UnsupportedRoot, ex.Code);
     }
 }

@@ -118,6 +118,20 @@ WPFXamlViewer_VSCode/
 | 4.4 | 해석 불가 사용자 타입 → 자리표시자(Tier 0, H013) | `local:MyControl` 포함 픽스처: 나머지 요소 정상 + 자리표시자 박스 골든 |
 | 4.5 | `Window` 루트는 콘텐츠를 `Border`로 호스팅해 렌더(창 크롬 제외) | Window/UserControl/Page/Grid 루트별 골든 |
 
+**M4 결과 (2026-10-07)**
+- 구현: `XamlPreprocessor`(호스트) — ① x:Class/x:Subclass/x:ClassModifier/x:FieldModifier 제거 ② 이벤트 핸들러 속성 제거(System.Xaml로 "이 요소 타입의 이벤트인가" 판별, `Owner.Event` 연결 이벤트 포함) ③ x:Code 제거 ④ `clr-namespace` 타입이 해석되지 않으면 Border+TextBlock 자리표시자(Width/Height/Margin/정렬/연결 속성/x:Name/x:Key만 승계, 자식은 버림) ⑤ `ResourceDictionary Source` 병합 사전 인라인(문서 폴더 → 위쪽 폴더 순 탐색, pack `;component/` 경로 지원, 순환/깊이 8 초과/네트워크 URI/없음은 경고 + 빈 사전). `Window` 루트는 콘텐츠를 Border에 호스팅(크기/배경/리소스/글꼴·전경 로컬 값 승계). d:/mc:는 XamlReader가 직접 처리해 별도 코드가 없다(R12 골든으로 확인).
+- **줄 번호 보존**: 제거/대체 구간은 줄바꿈 수를 유지한다(원본 문자열을 오프셋으로 편집). 여러 줄에 걸친 속성을 제거해도 뒤쪽 오류 줄이 원본과 같다(H-X05, U02). XML이 깨진 문서는 전처리가 직접 XmlMalformed로 보고한다(x:Class 오류가 원인을 가리지 않게).
+- 프로토콜: `render` 파라미터 `filePath`(병합 사전 해석용), 응답 `warnings:[{code,message,line?,col?}]` 활성. 코드: RemovedClassAttribute, RemovedEventHandler, RemovedCodeBlock, PlaceholderUsed, DictionaryUnavailable. 자리표시자는 H013 로그(최대 5개). 확장은 `filePath`를 보내고 상태 표시줄에 경고 개수와 툴팁을 보여준다.
+- 검증: 호스트 78개(신규 20: H-X01~X06, H-W01~W02, H-U01~U02, H-RD01~RD04, 골든 R11~R14 눈으로 확인), 실제 호스트 + HostClient 9개(신규: x:Class/이벤트 경고 + filePath 병합).
+- 테스트 프로젝트: `Fixtures/**/*.xaml`을 WPF Page로 컴파일하지 않도록 제외(해석 불가 타입 픽스처가 빌드 오류가 되므로).
+- **미검증/제한 (실제 프로젝트 XAML에서 만날 수 있는 것)**:
+  1. `App.xaml` 리소스 자동 탐색은 **미구현**(4.3의 후반). 그래서 App.xaml에만 있는 리소스를 `{StaticResource}`로 쓰면 XamlParse 오류가 난다. 가장 흔한 실사용 실패 원인일 가능성이 크다.
+  2. 해석 불가 타입이 **요소가 아닌 자리**(`TargetType="local:Foo"`, `{x:Type local:Foo}`, `{x:Static local:Foo.Bar}`, `{local:MyExtension}`, `Style TargetType`)에 쓰이면 자리표시자로 대체되지 않고 XamlParse 오류가 난다.
+  3. 자리표시자는 자식을 버린다(사용자 컨트롤 안의 내용은 보이지 않는다). Tier 1(M4B)에서 실제 렌더 예정.
+  4. `Window`의 `SizeToContent`, `WindowStyle`, 타이틀바는 무시한다(콘텐츠만, 명시 크기 우선).
+  5. 이벤트 판별은 WPF 기본 네임스페이스 타입 기준이다. 해석되는 사용자 타입의 이벤트는 그 타입이 로드될 때(M4B)만 알 수 있다.
+  6. 기존 골든 PNG 10개를 이 PC(Windows 10)에서 `XAMLVIEWER_UPDATE_GOLDEN=1`로 다시 만들면 **바이트가 달랐다**(허용오차 안이라 비교 테스트는 두 머신 모두 통과). 원본(Windows 11에서 만든 것)은 되돌려 두었고 신규 골든 4개만 이 PC에서 생성했다. 허용오차를 넘는 차이가 생기면 03 문서 2절 절차(원인 확정 먼저)를 따른다.
+
 ### M4B. 프로젝트 인식 렌더링 (Tier 1 — 사용자 정의 컨트롤 실제 렌더)
 설계: 01 문서 §3.3. 사용자 코드가 실행되므로 이 마일스톤은 **격리·신뢰 검증이 핵심**이다.
 

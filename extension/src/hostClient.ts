@@ -61,9 +61,19 @@ export class HostDisposedError extends Error {
 /** render 요청 파라미터(프로토콜: doc/01 3.1). */
 export interface RenderParams {
     xaml: string;
+    /** 문서의 파일 경로. 호스트가 병합 사전의 상대 경로를 풀 때 쓴다. */
+    filePath?: string;
     width?: number;
     height?: number;
     dpi?: number;
+}
+
+/** 렌더는 성공했지만 사용자가 알아야 하는 변경/제한(제거한 x:Class, 자리표시자 등). 줄/열은 1-base, 없을 수 있다. */
+export interface RenderWarning {
+    code: string;
+    message: string;
+    line?: number;
+    col?: number;
 }
 
 /** render 성공 결과(프로토콜: doc/01 3.1). */
@@ -72,7 +82,7 @@ export interface RenderResult {
     width: number;
     height: number;
     elements: unknown[];
-    warnings: unknown[];
+    warnings: RenderWarning[];
 }
 
 /** renderLatest 결과: 더 새 요청에 밀려 폐기되었으면 `discarded: true`. */

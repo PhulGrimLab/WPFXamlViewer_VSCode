@@ -119,11 +119,13 @@ public sealed class RequestHandler
     private string HandleRender(JsonNode? id, JsonObject? p)
     {
         string xaml;
+        string? filePath;
         double? width, height;
         double dpi;
         try
         {
             xaml = p?["xaml"]?.GetValue<string>() ?? throw new JsonException("params.xaml(문자열)이 필요합니다.");
+            filePath = p["filePath"]?.GetValue<string>();
             width = p["width"]?.GetValue<double>();
             height = p["height"]?.GetValue<double>();
             dpi = p["dpi"]?.GetValue<double>() ?? XamlRenderer.DefaultDpi;
@@ -136,17 +138,19 @@ public sealed class RequestHandler
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var result = XamlRenderer.Render(new RenderRequest(xaml, width, height, dpi));
+            var result = XamlRenderer.Render(new RenderRequest(xaml, width, height, dpi, filePath));
+            var warnings = result.Warnings ?? Array.Empty<RenderWarning>();
             _logger.Log(LogLevel.Info, LogIds.RenderSucceeded,
-                $"id={id?.ToJsonString() ?? "null"} ms={stopwatch.ElapsedMilliseconds} size={result.PixelWidth}x{result.PixelHeight} elements=0 warnings=0");
+                $"id={id?.ToJsonString() ?? "null"} ms={stopwatch.ElapsedMilliseconds} size={result.PixelWidth}x{result.PixelHeight} elements=0 warnings={warnings.Count}");
+            LogPlaceholders(id, warnings);
             return Ok(id, new JsonObject
             {
                 ["png"] = Convert.ToBase64String(result.Png),
                 ["width"] = result.PixelWidth,
                 ["height"] = result.PixelHeight,
-                // 요소 매핑(HitMap)과 경고는 M4/M5에서 채운다. 응답 형식은 지금부터 고정한다.
+                // 요소 매핑(HitMap)은 M5에서 채운다. 응답 형식은 지금부터 고정한다.
                 ["elements"] = new JsonArray(),
-                ["warnings"] = new JsonArray(),
+                ["warnings"] = ToJson(warnings),
             });
         }
         catch (XamlRenderException ex)
@@ -155,6 +159,46 @@ public sealed class RequestHandler
                 $"id={id?.ToJsonString() ?? "null"} code={ex.Code} line={ex.Line?.ToString() ?? "-"} col={ex.Column?.ToString() ?? "-"}");
             return Error(id, ex.Code, ex.Message, ex.Line, ex.Column);
         }
+    }
+
+    /// <summary>H013 로그에 남기는 자리표시자 타입 최대 개수(로그 폭주 방지).</summary>
+    private const int MaxPlaceholderLogEntries = 5;
+
+    /// <summary>자리표시자로 대체한 타입을 H013으로 기록한다(최대 <see cref="MaxPlaceholderLogEntries"/>개). 타입 이름만 남기고 본문은 남기지 않는다.</summary>
+    private void LogPlaceholders(JsonNode? id, IReadOnlyList<RenderWarning> warnings)
+    {
+        foreach (var w in warnings.Where(w => w.Code == WarningCodes.PlaceholderUsed).Take(MaxPlaceholderLogEntries))
+        {
+            _logger.Log(LogLevel.Warn, LogIds.PlaceholderUsed, $"id={id?.ToJsonString() ?? "null"} {w.Message}");
+        }
+    }
+
+    /// <summary>경고 목록을 프로토콜의 warnings 배열(code/message/line/col)로 바꾼다.</summary>
+    private static JsonArray ToJson(IReadOnlyList<RenderWarning> warnings)
+    {
+        var array = new JsonArray();
+        foreach (var w in warnings)
+        {
+            var item = new JsonObject { ["code"] = w.Code, ["message"] = w.Message };
+            if (w.Line.HasValue)
+            {
+                item["line"] = w.Line.Value;
+            }
+            else
+            {
+                // 줄 정보 없음: 생략.
+            }
+            if (w.Column.HasValue)
+            {
+                item["col"] = w.Column.Value;
+            }
+            else
+            {
+                // 열 정보 없음: 생략.
+            }
+            array.Add(item);
+        }
+        return array;
     }
 
     private static string Ok(JsonNode? id, JsonObject result)

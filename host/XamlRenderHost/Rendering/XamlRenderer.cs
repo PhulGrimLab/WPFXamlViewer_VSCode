@@ -9,11 +9,11 @@ using System.Xml.Linq;
 
 namespace XamlRenderHost.Rendering;
 
-/// <summary>렌더 요청. Width/Height는 "요청 크기"(우선순위 3번)이며 루트의 명시 크기와 d:Design* 가 있으면 무시된다.</summary>
-public sealed record RenderRequest(string Xaml, double? Width = null, double? Height = null, double Dpi = XamlRenderer.DefaultDpi);
+/// <summary>렌더 요청. FilePath는 문서의 파일 경로로, 병합 사전의 상대 경로를 풀 때만 쓴다(없어도 렌더된다). Width/Height는 "요청 크기"(우선순위 3번)이며 루트의 명시 크기와 d:Design* 가 있으면 무시된다.</summary>
+public sealed record RenderRequest(string Xaml, double? Width = null, double? Height = null, double Dpi = XamlRenderer.DefaultDpi, string? FilePath = null);
 
 /// <summary>렌더 결과. Png는 투명 배경 PNG 바이트, 크기는 픽셀 단위.</summary>
-public sealed record RenderResult(byte[] Png, int PixelWidth, int PixelHeight);
+public sealed record RenderResult(byte[] Png, int PixelWidth, int PixelHeight, IReadOnlyList<RenderWarning>? Warnings = null);
 
 /// <summary>
 /// XAML 문자열을 WPF로 실제 렌더링해 PNG로 돌려준다(doc/01 3절의 Renderer).
@@ -45,7 +45,8 @@ public static class XamlRenderer
     /// XAML을 렌더해 PNG를 만든다.
     /// 입력: <paramref name="request"/>. 출력: PNG와 픽셀 크기.
     /// 예외: <see cref="XamlRenderException"/> — 코드/줄/열을 가진 구조화된 오류(빈 입력, XML/XAML 오류, 지원하지 않는 루트, 크기 초과, 렌더 실패).
-    /// 주의: 렌더 전에 x:Class/이벤트 핸들러가 있으면 XamlReader가 실패한다 — 제거는 M4(XamlPreprocessor)에서 한다.
+    /// 렌더 전에 <see cref="XamlPreprocessor"/>가 x:Class/이벤트/x:Code 제거, 해석 불가 타입 자리표시자, 병합 사전 인라인을 수행하며
+    /// 그 변경은 결과의 Warnings로 돌려준다. 전처리는 줄 번호를 보존하므로 오류 위치는 원본 기준이다.
     /// </summary>
     public static RenderResult Render(RenderRequest request)
     {
@@ -58,14 +59,15 @@ public static class XamlRenderer
             // 정상 입력: 계속 진행.
         }
 
-        var root = ParseRoot(request.Xaml);
-        var (designWidth, designHeight) = ReadDesignSize(request.Xaml);
+        var preprocessed = XamlPreprocessor.Process(request.Xaml, request.FilePath);
+        var root = ParseRoot(preprocessed.Xaml);
+        var (designWidth, designHeight) = ReadDesignSize(preprocessed.Xaml);
         var width = ResolveDimension(root.Width, designWidth, request.Width);
         var height = ResolveDimension(root.Height, designHeight, request.Height);
 
         try
         {
-            return RenderToPng(root, width, height, request.Dpi);
+            return RenderToPng(root, width, height, request.Dpi) with { Warnings = preprocessed.Warnings };
         }
         catch (XamlRenderException)
         {
@@ -94,10 +96,9 @@ public static class XamlRenderer
             throw new XamlRenderException(RenderErrorCodes.XmlMalformed, ex.Message, ex.LineNumber, ex.LinePosition, ex);
         }
 
-        if (parsed is Window)
+        if (parsed is Window window)
         {
-            // Window는 Show 없이 렌더할 수 없다. 콘텐츠 호스팅은 M4.5에서 지원한다.
-            throw new XamlRenderException(RenderErrorCodes.UnsupportedRoot, "Window 루트는 아직 지원하지 않습니다(M4.5 예정).");
+            return HostWindowContent(window);
         }
         else if (parsed is FrameworkElement element)
         {
@@ -108,6 +109,53 @@ public static class XamlRenderer
             throw new XamlRenderException(
                 RenderErrorCodes.UnsupportedRoot,
                 $"루트가 FrameworkElement가 아닙니다: {parsed?.GetType().Name ?? "null"}");
+        }
+    }
+
+    /// <summary>
+    /// Window 루트를 렌더 가능한 Border로 바꾼다(창 크롬 제외, M4.5). Window는 Show 없이 그릴 수 없으므로 콘텐츠를 떼어
+    /// Border에 호스팅하고, 크기/배경/리소스/글꼴(로컬로 지정된 것만)을 Window에서 옮긴다. Window는 표시된 적이 없어 별도 정리가 필요 없다.
+    /// </summary>
+    private static FrameworkElement HostWindowContent(Window window)
+    {
+        var content = window.Content;
+        window.Content = null; // 콘텐츠의 논리 부모를 Window에서 떼어야 다른 부모에 붙일 수 있다.
+        var resources = window.Resources;
+        window.Resources = new ResourceDictionary();
+
+        var host = new System.Windows.Controls.Border
+        {
+            Width = window.Width,
+            Height = window.Height,
+            Background = window.Background,
+            Resources = resources,
+            Child = content switch
+            {
+                null => null,
+                UIElement element => element,
+                _ => new System.Windows.Controls.ContentPresenter { Content = content },
+            },
+        };
+        CopyLocalValue(window, host, System.Windows.Controls.Control.FontFamilyProperty, System.Windows.Documents.TextElement.FontFamilyProperty);
+        CopyLocalValue(window, host, System.Windows.Controls.Control.FontSizeProperty, System.Windows.Documents.TextElement.FontSizeProperty);
+        CopyLocalValue(window, host, System.Windows.Controls.Control.ForegroundProperty, System.Windows.Documents.TextElement.ForegroundProperty);
+        return host;
+    }
+
+    /// <summary>
+    /// Window에 로컬 값이 있을 때만 호스트 Border에 옮긴다. Border는 Control이 아니라 글꼴 DP를 직접 갖지 않으므로
+    /// 자식에게 상속되는 TextElement 쪽 속성으로 설정한다.
+    /// </summary>
+    private static void CopyLocalValue(DependencyObject from, FrameworkElement to, DependencyProperty source, DependencyProperty inheritableTarget)
+    {
+        var value = from.ReadLocalValue(source);
+        if (value != DependencyProperty.UnsetValue)
+        {
+            to.SetValue(inheritableTarget, value);
+        }
+        else
+        {
+            // 로컬 값 없음: 기본값 유지.
         }
     }
 

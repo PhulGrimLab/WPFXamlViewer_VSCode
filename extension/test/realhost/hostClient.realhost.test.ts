@@ -164,6 +164,28 @@ describe('실제 호스트 + HostClient', function () {
         assert.strictEqual(client.pid, pid);
     });
 
+    it('M4 x:Class/이벤트가 있는 XAML이 렌더되고 경고로 보고된다, 병합 사전은 filePath 기준으로 해석된다', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xamlviewer-m4-'));
+        try {
+            fs.writeFileSync(path.join(dir, 'Wide.xaml'),
+                `<ResourceDictionary ${NS}><Style TargetType="Button"><Setter Property="Width" Value="77"/></Style></ResourceDictionary>`);
+            const xaml = `<Button ${NS} xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="A.B" Height="20" Click="OnClick">`
+                + '<Button.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries>'
+                + '<ResourceDictionary Source="Wide.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></Button.Resources></Button>';
+            const { client } = newClient(path.join(dir, 'logs'), false);
+            try {
+                const result = await client.request<RenderResult>('render', { xaml, filePath: path.join(dir, 'Main.xaml') });
+                assert.strictEqual(result.width, 77);
+                const codes = (result.warnings as { code: string }[]).map((w) => w.code).sort();
+                assert.deepStrictEqual(codes, ['RemovedClassAttribute', 'RemovedEventHandler']);
+            } finally {
+                await client.dispose();
+            }
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
     it('I-07 로그: 시나리오 후 호스트 로그에 H001/H011/H012가 순서대로 남고 XAML 본문은 없다', async () => {
         const c = newClient(logDir, false);
         client = c.client;

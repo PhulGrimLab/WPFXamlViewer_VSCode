@@ -1,0 +1,11 @@
+<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:local="clr-namespace:MyApp.Controls;assembly=MyApp"
+            Width="220" Margin="6">
+  <TextBlock Text="Before"/>
+  <local:FancyGauge x:Name="Gauge" Width="160" Height="36" Value="5" Minimum="0" Margin="0,4"/>
+  <local:Panel2 Height="40">
+    <Button Content="Dropped child"/>
+  </local:Panel2>
+  <TextBlock Text="After"/>
+</StackPanel>

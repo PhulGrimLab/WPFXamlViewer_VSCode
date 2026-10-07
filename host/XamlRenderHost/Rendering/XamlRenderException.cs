@@ -15,7 +15,7 @@ public static class RenderErrorCodes
     /// <summary>XML은 올바르나 XAML로 해석할 수 없다(알 수 없는 요소/속성, 잘못된 값 등).</summary>
     public const string XamlParse = "XamlParse";
 
-    /// <summary>루트가 렌더할 수 없는 종류다(M4.5 전까지 Window 등).</summary>
+    /// <summary>루트가 렌더할 수 없는 종류다(FrameworkElement/Window가 아닌 객체).</summary>
     public const string UnsupportedRoot = "UnsupportedRoot";
 
     /// <summary>요청 또는 결정된 렌더 크기가 허용 범위를 넘는다.</summary>

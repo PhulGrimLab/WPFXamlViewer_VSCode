@@ -1,0 +1,11 @@
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="MyApp.Views.MainView"
+             Width="200" Height="90">
+  <StackPanel Margin="8">
+    <Button x:Name="Ok" Content="OK" Width="80"
+            Click="Ok_Click"
+            Loaded="Ok_Loaded"/>
+    <CheckBox Content="Check" Checked="Cb_Checked" Margin="0,6,0,0"/>
+  </StackPanel>
+</UserControl>

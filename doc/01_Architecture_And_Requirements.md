@@ -72,6 +72,7 @@ VS Code에서 `.xaml` 파일을 편집하는 동안 **실제 WPF가 그리는 �
 요청: `{"id":1,"method":"render","params":{"xaml":"...","filePath":"...","width":800,"height":600,"dpi":96}}`
 응답: `{"id":1,"ok":true,"result":{"png":"<base64>","width":800,"height":600,"elements":[{"id":"e3","line":12,"col":5,"x":0,"y":0,"w":100,"h":30}],"warnings":[...]}}`
 오류: `{"id":1,"ok":false,"error":{"code":"XamlParse","message":"...","line":12,"col":5}}`
+`warnings` 항목: `{"code":"PlaceholderUsed","message":"...","line":12,"col":5}`(줄/열은 생략될 수 있음). 코드는 RemovedClassAttribute, RemovedEventHandler, RemovedCodeBlock, PlaceholderUsed, DictionaryUnavailable.
 그 외 메서드: `ping`(→ `{version, protocol, pid}`), `shutdown`. `ping`의 `protocol`로 확장/호스트 불일치를 감지한다.
 프로토콜 오류 코드: `InvalidRequest`(JSON/형식 오류, `id`는 null), `InvalidParams`, `UnknownMethod`. 렌더 오류 코드는 `XamlRenderException` 참고.
 호스트는 `serve [--log-dir D] [--log-level L]` 모드로 실행한다. 입력 EOF 또는 `shutdown`이면 종료 코드 0.
