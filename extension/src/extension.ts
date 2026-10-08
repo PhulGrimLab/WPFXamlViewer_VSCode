@@ -9,7 +9,18 @@ import { PreviewController } from './previewController';
 
 /** 통합 테스트(T4/T5)가 확장 상태를 읽는 API. activate의 반환값으로 노출한다. */
 export interface ExtensionTestApi {
-    getPreviewState(): { renderCount: number; lastImageSize: { width: number; height: number } | undefined };
+    getPreviewState(): {
+        renderCount: number;
+        lastImageSize: { width: number; height: number } | undefined;
+        elementCount: number;
+        highlightedId: string | undefined;
+        viewState: { zoom: number; background: string } | undefined;
+        size: { width?: number; height?: number };
+    };
+    /** 웹뷰가 보냈을 법한 메시지를 실제 수신 처리 함수로 넣는다(웹뷰 DOM 이벤트는 만들 수 없어서). */
+    simulateWebviewMessage(raw: unknown): void;
+    /** 확장 → 웹뷰 보기 상태 지정(웹뷰가 적용하고 회신한다). */
+    setView(message: { zoom?: number; background?: 'checker' | 'white' | 'dark'; fit?: boolean }): void;
     /** 호스트 exe를 찾았는지. */
     hostFound: boolean;
     /** 현재 호스트 프로세스 id(없으면 undefined). */
@@ -48,7 +59,9 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         }
     };
     const api: ExtensionTestApi = {
-        getPreviewState: () => ({ renderCount: 0, lastImageSize: undefined }),
+        getPreviewState: () => ({ renderCount: 0, lastImageSize: undefined, elementCount: 0, highlightedId: undefined, viewState: undefined, size: {} }),
+        simulateWebviewMessage: () => undefined,
+        setView: () => undefined,
         hostFound: false,
         getHostPid: () => undefined,
         getLogLines: () => [...logLines],
@@ -75,7 +88,16 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         vscode.commands.registerCommand(COMMAND_OPEN_PREVIEW, () => controller.open()),
     );
     api.hostFound = true;
-    api.getPreviewState = () => ({ renderCount: controller.renderCount, lastImageSize: controller.lastImageSize });
+    api.getPreviewState = () => ({
+        renderCount: controller.renderCount,
+        lastImageSize: controller.lastImageSize,
+        elementCount: controller.elementCount,
+        highlightedId: controller.highlightedId,
+        viewState: controller.viewState,
+        size: controller.size,
+    });
+    api.simulateWebviewMessage = (raw) => controller.simulateWebviewMessage(raw);
+    api.setView = (message) => controller.setView(message);
     api.getHostPid = () => client.pid;
     return api;
 }

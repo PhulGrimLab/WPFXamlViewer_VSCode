@@ -13,7 +13,7 @@ namespace XamlRenderHost.Rendering;
 public sealed record RenderRequest(string Xaml, double? Width = null, double? Height = null, double Dpi = XamlRenderer.DefaultDpi, string? FilePath = null, bool AllowProjectAssemblies = false);
 
 /// <summary>렌더 결과. Png는 투명 배경 PNG 바이트, 크기는 픽셀 단위.</summary>
-public sealed record RenderResult(byte[] Png, int PixelWidth, int PixelHeight, IReadOnlyList<RenderWarning>? Warnings = null, ProjectTierInfo? Project = null);
+public sealed record RenderResult(byte[] Png, int PixelWidth, int PixelHeight, IReadOnlyList<RenderWarning>? Warnings = null, ProjectTierInfo? Project = null, IReadOnlyList<HitElement>? Elements = null);
 
 /// <summary>
 /// XAML 문자열을 WPF로 실제 렌더링해 PNG로 돌려준다(doc/01 3절의 Renderer).
@@ -87,7 +87,22 @@ public static class XamlRenderer
 
         var tier = ProjectTier.Resolve(request.AllowProjectAssemblies, request.FilePath);
         var schema = ProjectTier.CreateSchemaContext(tier);
-        var preprocessed = XamlPreprocessor.Process(request.Xaml, request.FilePath, tier.Tier == 1 ? tier.AssemblyName : null, schema);
+        try
+        {
+            return RenderCore(request, tier, schema, tagElements: true);
+        }
+        catch (XamlRenderException ex) when (ex.Code == RenderErrorCodes.XamlParse && ex.Line.HasValue)
+        {
+            // HitMap용 Uid 태그가 같은 줄의 열 위치를 밀어 놓았다. 오류 위치(특히 열)를 원본 기준으로 정확히 보고하려고
+            // 태그 없이 한 번 더 파싱한다(오류 경로에서만 드는 비용). 뜻밖에 성공하면 그 결과(HitMap 없음)를 돌려준다.
+            return RenderCore(request, tier, schema, tagElements: false);
+        }
+    }
+
+    /// <summary>전처리 → 파싱 → 레이아웃 → PNG/HitMap의 본체. tagElements=true면 HitMap용 Uid 태그를 붙인다.</summary>
+    private static RenderResult RenderCore(RenderRequest request, ProjectTierInfo tier, System.Xaml.XamlSchemaContext? schema, bool tagElements)
+    {
+        var preprocessed = XamlPreprocessor.Process(request.Xaml, request.FilePath, tier.Tier == 1 ? tier.AssemblyName : null, schema, tagElements);
         var warnings = new List<RenderWarning>(preprocessed.Warnings);
         var (root, finalXaml) = ParseWithUserFailureRecovery(preprocessed.Xaml, schema, warnings);
         if (tier.Tier == 0 && warnings.Any(w => w.Code == WarningCodes.PlaceholderUsed))
@@ -105,7 +120,16 @@ public static class XamlRenderer
 
         try
         {
-            return RenderToPng(root, width, height, request.Dpi) with { Warnings = warnings, Project = tier };
+            var result = RenderToPng(root, width, height, request.Dpi, preprocessed.Elements);
+            if (result.Elements is { Count: >= HitMap.MaxElements })
+            {
+                warnings.Add(new RenderWarning(WarningCodes.HitMapTruncated, $"요소가 많아 클릭 매핑을 {HitMap.MaxElements}개로 제한했습니다.", null, null));
+            }
+            else
+            {
+                // 한도 이내.
+            }
+            return result with { Warnings = warnings, Project = tier };
         }
         catch (XamlRenderException)
         {
@@ -238,6 +262,7 @@ public static class XamlRenderer
             Width = window.Width,
             Height = window.Height,
             Background = window.Background,
+            Uid = window.Uid, // HitMap: Window 요소의 위치를 호스트 Border가 대신 가진다.
             Resources = resources,
             Child = content switch
             {
@@ -343,7 +368,7 @@ public static class XamlRenderer
     }
 
     /// <summary>레이아웃(Measure/Arrange)을 수행하고 RenderTargetBitmap으로 그려 PNG로 인코딩한다.</summary>
-    private static RenderResult RenderToPng(FrameworkElement root, double? width, double? height, double dpi)
+    private static RenderResult RenderToPng(FrameworkElement root, double? width, double? height, double dpi, IReadOnlyList<SourceElement> sources)
     {
         // 결정성: ClearType 대신 회색조 텍스트. 사용자 XAML이 직접 지정했다면 그 값이 우선하도록 로컬 값이 없을 때만 설정한다.
         if (root.ReadLocalValue(System.Windows.Media.TextOptions.TextRenderingModeProperty) == DependencyProperty.UnsetValue)
@@ -378,6 +403,9 @@ public static class XamlRenderer
             // 허용 범위: 계속 진행.
         }
 
+        // 클릭 매핑은 레이아웃이 끝난 지금 계산한다(PNG와 같은 픽셀 좌표계: dpi 배율 반영).
+        var elements = HitMap.Collect(root, sources, scale, out _);
+
         var bitmap = new RenderTargetBitmap(pixelWidth, pixelHeight, dpi, dpi, PixelFormats.Pbgra32);
         bitmap.Render(root);
 
@@ -385,6 +413,6 @@ public static class XamlRenderer
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
         using var stream = new MemoryStream();
         encoder.Save(stream);
-        return new RenderResult(stream.ToArray(), pixelWidth, pixelHeight);
+        return new RenderResult(stream.ToArray(), pixelWidth, pixelHeight, Elements: elements);
     }
 }

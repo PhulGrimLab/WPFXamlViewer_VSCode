@@ -42,7 +42,13 @@ public class ProtocolTests
         Assert.IsTrue((bool)r["ok"]!, r.ToJsonString());
         Assert.AreEqual(40, (int)r["result"]!["width"]!);
         Assert.AreEqual(20, (int)r["result"]!["height"]!);
-        Assert.AreEqual(0, r["result"]!["elements"]!.AsArray().Count);
+        var elements = r["result"]!["elements"]!.AsArray();
+        Assert.HasCount(1, elements, "루트 Rectangle 하나가 HitMap에 있어야 한다");
+        Assert.AreEqual("e0", (string)elements[0]!["id"]!);
+        Assert.AreEqual(1, (int)elements[0]!["line"]!);
+        Assert.AreEqual(1, (int)elements[0]!["col"]!);
+        Assert.AreEqual(40.0, (double)elements[0]!["w"]!);
+        Assert.AreEqual(20.0, (double)elements[0]!["h"]!);
 
         var png = Convert.FromBase64String((string)r["result"]!["png"]!);
         Assert.IsTrue(png.Length > 8 && png[1] == (byte)'P' && png[2] == (byte)'N' && png[3] == (byte)'G', "PNG 시그니처가 아님");

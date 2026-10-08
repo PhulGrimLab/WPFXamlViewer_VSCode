@@ -5,7 +5,7 @@
 > 최신 커밋은 `git log`로 확인할 것(이 문서는 커밋 해시를 박지 않는다).
 
 ## 1. 한 줄 요약
-**M0~M4B 완료. 다음은 M5(상호작용: 줌/팬, HitMap, 클릭 → 줄 이동).** VS Code 확장은 `Open Preview` 명령, 자동 갱신, Problems, 경고 표시까지 동작하며, 호스트는 실제 프로젝트 XAML(x:Class/이벤트/Window 루트/병합 사전/사용자 타입 자리표시자)을 렌더한다. **신뢰된 워크스페이스에서는 프로젝트 빌드 DLL의 사용자 컨트롤이 실제로 그려진다(빌드 산출물이 있어야 함)**(02 문서 M4/M4B 결과의 제한 목록 참고).
+**M0~M5 완료. 다음은 M6(패키징 + 문서: 호스트 번들, `.vsix`, VS 없는 PC 검증). 그 전에 웹뷰 마우스 동작(드래그/휠/클릭)을 실제로 한 번 써 보며 확인하길 권한다.** VS Code 확장은 `Open Preview` 명령, 자동 갱신, Problems, 경고 표시까지 동작하며, 호스트는 실제 프로젝트 XAML(x:Class/이벤트/Window 루트/병합 사전/사용자 타입 자리표시자)을 렌더한다. **신뢰된 워크스페이스에서는 프로젝트 빌드 DLL의 사용자 컨트롤이 실제로 그려진다(빌드 산출물이 있어야 함)**(02 문서 M4/M4B 결과의 제한 목록 참고).
 
 ## 2. 확정된 전제 (사용자 결정)
 - **Windows 전용.** (2026-10-06 사용자 확정)
@@ -22,8 +22,8 @@
 | M3 확장 MVP | ✅ 완료 | 미리보기 패널, 자동 갱신, Problems, 통합 테스트 5개(I-01~I-05) |
 | M4 XAML 해석 충실도 | ✅ 완료(App.xaml 리소스 포함) | x:Class/이벤트 제거, d:/mc:, 병합 사전, 자리표시자, Window 루트 |
 | M4B 프로젝트 인식 렌더링(Tier 1) | ✅ 완료(B.5 프로세스 분리 제외) | 사용자 컨트롤 DLL 로드, Workspace Trust |
-| **M5 상호작용** | ⏭ **다음** | 줌/팬, HitMap, 클릭 → 줄 이동 |
-| M6 패키징 + 문서 | 대기 | 호스트 번들, `.vsix`, VS 없는 PC 검증 |
+| M5 상호작용 | ✅ 완료(웹뷰 마우스 이벤트 실사용 미검증) | 줌/팬, HitMap, 클릭 → 줄 이동 |
+| **M6 패키징 + 문서** | ⏭ **다음** | 호스트 번들, `.vsix`, VS 없는 PC 검증 |
 
 ## 4. 현재 코드 구성
 
@@ -39,7 +39,7 @@ host/                              ← .NET 10 WPF 렌더 호스트 (XamlRenderH
     Protocol/RequestHandler.cs     ← JSON 요청 → 응답 (ping/render/shutdown, debug.* 는 훅 켜졌을 때만)
     Protocol/ProtocolLoop.cs       ← stdin/stdout 스레드 구조
     Logging/HostLogger.cs, FileLogSink.cs ← 비동기 큐 로거, 1MB×5 회전
-  XamlRenderHost.Tests/            ← MSTest 100개 (골든, 크기, 오류, 프로토콜, 로그, CLI)
+  XamlRenderHost.Tests/            ← MSTest 110개 (골든, 크기, 오류, 프로토콜, 로그, CLI)
     Fixtures/{xaml,golden}/        ← 골든 PNG 10종 (눈으로 확인 완료)
 extension/                         ← VS Code 확장 (TypeScript)
   src/extension.ts                 ← activate: 출력 채널 + E001 로그만
@@ -57,7 +57,7 @@ git clone https://github.com/PhulGrimLab/WPFXamlViewer_VSCode.git
 cd WPFXamlViewer_VSCode
 .\doc\check_environment.ps1        # 없는 항목은 설치 방법을 안내한다
 cd extension; npm install; cd ..   # 확장 의존성 (node_modules는 git에 없다)
-.\tools\ci\ci.ps1                  # 전체 검증 — 호스트 100 + 확장 30 + 실제 호스트 13 + 통합 6(-IncludeIntegration) 이 모두 통과해야 정상
+.\tools\ci\ci.ps1                  # 전체 검증 — 호스트 110 + 확장 40 + 실제 호스트 13 + 통합 9(-IncludeIntegration) 이 모두 통과해야 정상
 ```
 - 필요 도구: .NET SDK 10, **.NET 10 Desktop Runtime**, Node.js LTS, VS Code, git. (Visual Studio는 필요 없다.)
 - 새 터미널에서 `node`가 안 잡히면 PATH 갱신 문제다(설치 직후). `ci.ps1`은 머신/사용자 PATH를 다시 합쳐서 실행한다.

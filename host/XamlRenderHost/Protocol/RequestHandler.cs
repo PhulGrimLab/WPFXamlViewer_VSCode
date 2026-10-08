@@ -144,7 +144,7 @@ public sealed class RequestHandler
             var result = XamlRenderer.Render(new RenderRequest(xaml, width, height, dpi, filePath, allowProjectAssemblies));
             var warnings = result.Warnings ?? Array.Empty<RenderWarning>();
             _logger.Log(LogLevel.Info, LogIds.RenderSucceeded,
-                $"id={id?.ToJsonString() ?? "null"} ms={stopwatch.ElapsedMilliseconds} size={result.PixelWidth}x{result.PixelHeight} elements=0 warnings={warnings.Count}");
+                $"id={id?.ToJsonString() ?? "null"} ms={stopwatch.ElapsedMilliseconds} size={result.PixelWidth}x{result.PixelHeight} elements={result.Elements?.Count ?? 0} warnings={warnings.Count}");
             LogPlaceholders(id, warnings);
             LogProjectTier(id, result.Project, warnings);
             return Ok(id, new JsonObject
@@ -152,8 +152,7 @@ public sealed class RequestHandler
                 ["png"] = Convert.ToBase64String(result.Png),
                 ["width"] = result.PixelWidth,
                 ["height"] = result.PixelHeight,
-                // 요소 매핑(HitMap)은 M5에서 채운다. 응답 형식은 지금부터 고정한다.
-                ["elements"] = new JsonArray(),
+                ["elements"] = ToJson(result.Elements),
                 ["warnings"] = ToJson(warnings),
                 ["project"] = result.Project == null ? null : new JsonObject
                 {
@@ -226,6 +225,28 @@ public sealed class RequestHandler
         {
             _logger.Log(LogLevel.Warn, LogIds.UserControlFailed, $"id={id?.ToJsonString() ?? "null"} {w.Message}");
         }
+    }
+
+    /// <summary>HitMap 요소를 프로토콜의 elements 배열로 바꾼다: 번호/원본 줄·열·끝 + 픽셀 경계(x,y,w,h).</summary>
+    private static JsonArray ToJson(IReadOnlyList<HitElement>? elements)
+    {
+        var array = new JsonArray();
+        foreach (var e in elements ?? Array.Empty<HitElement>())
+        {
+            array.Add(new JsonObject
+            {
+                ["id"] = $"e{e.Index}",
+                ["line"] = e.Line,
+                ["col"] = e.Col,
+                ["endLine"] = e.EndLine,
+                ["endCol"] = e.EndCol,
+                ["x"] = e.X,
+                ["y"] = e.Y,
+                ["w"] = e.Width,
+                ["h"] = e.Height,
+            });
+        }
+        return array;
     }
 
     /// <summary>경고 목록을 프로토콜의 warnings 배열(code/message/line/col)로 바꾼다.</summary>

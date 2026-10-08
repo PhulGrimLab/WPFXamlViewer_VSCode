@@ -10,8 +10,21 @@ namespace XamlRenderHost.Rendering;
 /// <summary>렌더는 성공했지만 사용자가 알아야 하는 변경/제한(제거한 x:Class, 자리표시자 등). 줄/열은 1-base, 없으면 null.</summary>
 public sealed record RenderWarning(string Code, string Message, int? Line, int? Column);
 
-/// <summary>전처리 결과: XamlReader가 읽을 수 있는 XAML과 수행한 변경 목록.</summary>
-public sealed record PreprocessResult(string Xaml, IReadOnlyList<RenderWarning> Warnings);
+/// <summary>
+/// 원본 문서의 요소 하나의 위치(HitMap 용). 줄/열은 1-base이며 열은 시작 태그의 '&lt;' 위치, 끝은 끝 태그 '&gt;' 다음 위치다.
+/// 전처리가 시작 태그에 `Uid="xv_번호"`를 붙여 렌더 후 비주얼 트리의 요소와 이 목록을 연결한다.
+/// 값 객체(전처리 중 끝 위치를 채우므로 setter가 있다).
+/// </summary>
+public sealed class SourceElement
+{
+    public int Line { get; init; }
+    public int Col { get; init; }
+    public int EndLine { get; set; }
+    public int EndCol { get; set; }
+}
+
+/// <summary>전처리 결과: XamlReader가 읽을 수 있는 XAML, 수행한 변경 목록, (태그를 켰다면) 태그한 요소들의 원본 위치.</summary>
+public sealed record PreprocessResult(string Xaml, IReadOnlyList<RenderWarning> Warnings, IReadOnlyList<SourceElement> Elements);
 
 /// <summary>전처리가 남기는 경고 코드(프로토콜 warnings[].code 와 같은 문자열).</summary>
 public static class WarningCodes
@@ -33,6 +46,9 @@ public static class WarningCodes
 
     /// <summary>Tier 0으로 그렸다: 사용자 컨트롤이 자리표시자인 이유(미신뢰/산출물 없음/로드 실패)를 알린다(H023).</summary>
     public const string ProjectTier0 = "ProjectTier0";
+
+    /// <summary>요소가 너무 많아 HitMap(클릭 매핑)을 한도까지만 만들었다.</summary>
+    public const string HitMapTruncated = "HitMapTruncated";
 
     /// <summary>병합 사전 파일을 찾지 못했거나 읽을 수 없어 빈 사전으로 대체했다.</summary>
     public const string DictionaryUnavailable = "DictionaryUnavailable";
@@ -78,7 +94,7 @@ public static partial class XamlPreprocessor
     private static readonly HashSet<string> InheritedPlaceholderAttributes = new(StringComparer.Ordinal)
     {
         "Width", "Height", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Margin",
-        "HorizontalAlignment", "VerticalAlignment", "Visibility", "Opacity",
+        "HorizontalAlignment", "VerticalAlignment", "Visibility", "Opacity", "Uid",
     };
 
     private static readonly HashSet<string> RemovedXamlAttributes = new(StringComparer.Ordinal)
@@ -97,6 +113,12 @@ public static partial class XamlPreprocessor
         /// <summary>Tier 1에서 로드한 프로젝트 어셈블리 이름. `assembly=` 없는 clr-namespace는 이 어셈블리로 해석한다. Tier 0이면 null.</summary>
         public string? ProjectAssemblyName { get; init; }
 
+        /// <summary>true면 주 문서(깊이 0)의 UIElement 요소에 `Uid="xv_번호"`를 붙이고 위치를 <see cref="SourceElements"/>에 기록한다(HitMap).</summary>
+        public bool TagElements { get; init; }
+
+        /// <summary>태그한 요소들의 원본 위치(Uid 번호 = 목록 인덱스).</summary>
+        public List<SourceElement> SourceElements { get; } = new();
+
         public Context(HashSet<string> visited) { VisitedDictionaries = visited; }
     }
 
@@ -107,7 +129,7 @@ public static partial class XamlPreprocessor
     /// 전처리를 수행한다. 입력: XAML 원문, (선택) 문서 파일 경로(병합 사전의 상대 경로 해석용). 출력: 변환된 XAML과 경고 목록.
     /// 예외: 원문 XML이 올바르지 않으면 <see cref="XamlRenderException"/>(XmlMalformed).
     /// </summary>
-    public static PreprocessResult Process(string xaml, string? filePath, string? projectAssemblyName = null, XamlSchemaContext? schema = null)
+    public static PreprocessResult Process(string xaml, string? filePath, string? projectAssemblyName = null, XamlSchemaContext? schema = null, bool tagElements = false)
     {
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrEmpty(filePath))
@@ -118,10 +140,10 @@ public static partial class XamlPreprocessor
         {
             // 파일 경로 없음: 순환 감지는 사전 파일부터 시작한다.
         }
-        var context = new Context(visited) { ProjectAssemblyName = projectAssemblyName, Schema = schema ?? new XamlSchemaContext() };
+        var context = new Context(visited) { ProjectAssemblyName = projectAssemblyName, Schema = schema ?? new XamlSchemaContext(), TagElements = tagElements };
         var processed = ProcessInternal(xaml, filePath, context, depth: 0);
         processed = InjectApplicationResources(processed, filePath, context);
-        return new PreprocessResult(processed, context.Warnings);
+        return new PreprocessResult(processed, context.Warnings, context.SourceElements);
     }
 
     /// <summary>한 문서(루트 또는 병합 사전 파일)를 전처리한다. 경고는 context에 누적한다.</summary>
@@ -135,9 +157,23 @@ public static partial class XamlPreprocessor
             using var stringReader = new StringReader(xaml);
             using var reader = XmlReader.Create(stringReader, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
             var lineInfo = (IXmlLineInfo)reader;
+            var openTagged = new Stack<(SourceElement Element, int Depth)>(); // 끝 위치를 아직 모르는 태그된 요소
             while (reader.Read())
             {
-                if (reader.NodeType != XmlNodeType.Element)
+                if (reader.NodeType == XmlNodeType.EndElement)
+                {
+                    if (openTagged.Count > 0 && openTagged.Peek().Depth == reader.Depth)
+                    {
+                        var closing = openTagged.Pop().Element;
+                        SetEnd(closing, lineStarts, IndexOfTagEnd(xaml, ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition)) + 1);
+                    }
+                    else
+                    {
+                        // 태그하지 않은 요소의 끝.
+                    }
+                    continue;
+                }
+                else if (reader.NodeType != XmlNodeType.Element)
                 {
                     continue;
                 }
@@ -165,14 +201,41 @@ public static partial class XamlPreprocessor
                 {
                     var (line, col) = (lineInfo.LineNumber, lineInfo.LinePosition - 1);
                     var typeName = reader.Name;
-                    var placeholder = BuildPlaceholder(reader, xaml, lineStarts, lineInfo);
+                    var tagged = depth == 0 && context.TagElements ? NewSourceElement(context, lineStarts, elementStart) : null;
+                    var placeholder = BuildPlaceholder(reader, xaml, lineStarts, lineInfo, uid: tagged == null ? null : UidValue(context.SourceElements.Count - 1));
                     var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
+                    if (tagged != null)
+                    {
+                        SetEnd(tagged, lineStarts, end);
+                    }
+                    else
+                    {
+                        // 태그하지 않음.
+                    }
                     edits.Add(new Edit(elementStart, end, placeholder + NewlinesIn(xaml, elementStart, end)));
                     warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, $"{typeName} 타입을 해석할 수 없어 자리표시자로 표시합니다.", line, col));
                 }
                 else
                 {
+                    // 태그 대상은 속성을 읽기 전에 정한다(CollectAttributeRemovals가 리더 위치를 움직였다 되돌린다).
+                    var tag = depth == 0 && context.TagElements ? TryTagElement(reader, xaml, lineStarts, context, edits, elementStart) : null;
+                    var isEmpty = reader.IsEmptyElement;
                     CollectAttributeRemovals(reader, xaml, lineStarts, lineInfo, context, edits);
+                    if (tag != null)
+                    {
+                        if (isEmpty)
+                        {
+                            SetEnd(tag, lineStarts, IndexOfTagEnd(xaml, elementStart) + 1);
+                        }
+                        else
+                        {
+                            openTagged.Push((tag, reader.Depth));
+                        }
+                    }
+                    else
+                    {
+                        // 태그하지 않은 요소.
+                    }
                 }
             }
         }
@@ -261,6 +324,71 @@ public static partial class XamlPreprocessor
         reader.MoveToElement();
     }
 
+    /// <summary>HitMap용 Uid 값. 번호는 <see cref="Context.SourceElements"/>의 인덱스다.</summary>
+    public const string UidPrefix = "xv_";
+
+    internal static string UidValue(int index) => UidPrefix + index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>오프셋을 1-base (줄, 열)로 바꾼다.</summary>
+    private static (int Line, int Col) ToLineCol(List<int> lineStarts, int offset)
+    {
+        var index = lineStarts.BinarySearch(offset);
+        if (index < 0)
+        {
+            index = ~index - 1;
+        }
+        else
+        {
+            // 정확히 줄 시작.
+        }
+        return (index + 1, offset - lineStarts[index] + 1);
+    }
+
+    private static void SetEnd(SourceElement element, List<int> lineStarts, int endOffset)
+    {
+        (element.EndLine, element.EndCol) = ToLineCol(lineStarts, endOffset);
+    }
+
+    /// <summary>시작 위치만 채운 SourceElement를 목록 끝에 추가한다(끝은 이후 SetEnd로 채운다).</summary>
+    private static SourceElement NewSourceElement(Context context, List<int> lineStarts, int elementStart)
+    {
+        var (line, col) = ToLineCol(lineStarts, elementStart);
+        var element = new SourceElement { Line = line, Col = col };
+        context.SourceElements.Add(element);
+        return element;
+    }
+
+    /// <summary>
+    /// 현재 요소가 UIElement처럼 `Uid` 속성을 가진 알려진 타입이고 사용자가 Uid를 직접 지정하지 않았다면,
+    /// 시작 태그 이름 바로 뒤에 `Uid="xv_번호"`를 붙이는 편집을 추가하고 새 SourceElement를 돌려준다. 아니면 null.
+    /// 속성 요소(`Type.Prop`)와 해석 불가 타입은 대상이 아니다.
+    /// </summary>
+    private static SourceElement? TryTagElement(XmlReader reader, string xaml, List<int> lineStarts, Context context, List<Edit> edits, int elementStart)
+    {
+        if (reader.LocalName.Contains('.')
+            || reader.GetAttribute("Uid") != null || reader.GetAttribute("Uid", XamlLanguageNamespace) != null)
+        {
+            return null;
+        }
+        else
+        {
+            // 후보: 타입 확인.
+        }
+
+        var type = context.Schema.GetXamlType(new XamlTypeName(WithProjectAssembly(reader.NamespaceURI, context), reader.LocalName));
+        if (type is not { IsUnknown: false } || type.GetMember("Uid") == null)
+        {
+            return null;
+        }
+        else
+        {
+            var element = NewSourceElement(context, lineStarts, elementStart);
+            var insertAt = elementStart + 1 + reader.Name.Length; // 시작 태그 이름 바로 뒤
+            edits.Add(new Edit(insertAt, insertAt, $" Uid=\"{UidValue(context.SourceElements.Count - 1)}\""));
+            return element;
+        }
+    }
+
     /// <summary>`assembly=` 없는 clr-namespace에 프로젝트 어셈블리 이름을 붙인 값을 돌려준다(해당 없으면 그대로).</summary>
     private static string WithProjectAssembly(string xmlNamespace, Context context)
     {
@@ -306,7 +434,7 @@ public static partial class XamlPreprocessor
     }
 
     /// <summary>해석 불가 요소를 대신할 Border+TextBlock 문자열을 만든다. 레이아웃 관련/연결 속성/x:Name/x:Key만 물려받는다.</summary>
-    private static string BuildPlaceholder(XmlReader reader, string xaml, List<int> lineStarts, IXmlLineInfo lineInfo, string? error = null)
+    private static string BuildPlaceholder(XmlReader reader, string xaml, List<int> lineStarts, IXmlLineInfo lineInfo, string? error = null, string? uid = null)
     {
         var typeName = reader.Name;
         var inherited = new StringBuilder();
@@ -333,6 +461,15 @@ public static partial class XamlPreprocessor
         else
         {
             // 속성 없음.
+        }
+
+        if (uid != null)
+        {
+            inherited.Append(" Uid=\"").Append(uid).Append('"'); // HitMap: 자리표시자도 클릭하면 원본 줄로 이동한다.
+        }
+        else
+        {
+            // 태그하지 않음.
         }
 
         // 오류 자리표시자(사용자 컨트롤 생성 예외)는 두 번째 줄에 예외 요약을 보여 준다. 줄바꿈은 문자 참조로 넣어 문서 줄 수를 바꾸지 않는다.

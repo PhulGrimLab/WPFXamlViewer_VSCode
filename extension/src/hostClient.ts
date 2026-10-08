@@ -1,4 +1,5 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
+import { HitElement } from './hitTest';
 import { DEFAULT_REQUEST_TIMEOUT_MS, SHUTDOWN_GRACE_MS, SHUTDOWN_REQUEST_ID } from './constants';
 import { LogId, LogLevel } from './logFormat';
 
@@ -86,7 +87,8 @@ export interface RenderResult {
     png: string;
     width: number;
     height: number;
-    elements: unknown[];
+    /** 요소 ↔ 원본 위치/경계(HitMap). 선위 순회 순서(마지막 일치가 가장 위). */
+    elements: HitElement[];
     warnings: RenderWarning[];
     /** 이번 렌더의 Tier 결정(0: 사용자 컨트롤은 자리표시자, 1: 프로젝트 DLL 로드)과 이유. */
     project?: { tier: number; reason: string } | null;

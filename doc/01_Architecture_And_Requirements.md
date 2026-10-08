@@ -70,7 +70,7 @@ VS Code에서 `.xaml` 파일을 편집하는 동안 **실제 WPF가 그리는 �
 
 ### 3.1 프로토콜 (줄 단위 JSON, M2에서 확정)
 요청: `{"id":1,"method":"render","params":{"xaml":"...","filePath":"...","width":800,"height":600,"dpi":96}}`
-응답: `{"id":1,"ok":true,"result":{"png":"<base64>","width":800,"height":600,"elements":[{"id":"e3","line":12,"col":5,"x":0,"y":0,"w":100,"h":30}],"warnings":[...]}}`
+응답: `{"id":1,"ok":true,"result":{"png":"<base64>","width":800,"height":600,"elements":[{"id":"e3","line":12,"col":5,"endLine":14,"endCol":12,"x":0,"y":0,"w":100,"h":30}],"warnings":[...]}}`
 오류: `{"id":1,"ok":false,"error":{"code":"XamlParse","message":"...","line":12,"col":5}}`
 `render` 파라미터 `allowProjectAssemblies`(기본 false): 확장이 `vscode.workspace.isTrusted`로 채운다. false면 호스트는 사용자 DLL을 로드하지 않는다. 응답 `project:{tier:0|1, reason}`.
 `warnings` 항목: `{"code":"PlaceholderUsed","message":"...","line":12,"col":5}`(줄/열은 생략될 수 있음). 코드는 RemovedClassAttribute, RemovedEventHandler, RemovedCodeBlock, PlaceholderUsed, DictionaryUnavailable.
