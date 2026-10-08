@@ -5,7 +5,7 @@
 > 최신 커밋은 `git log`로 확인할 것(이 문서는 커밋 해시를 박지 않는다).
 
 ## 1. 한 줄 요약
-**M0~M4 완료. 다음은 M4B(프로젝트 인식 렌더링) 또는 App.xaml 리소스 탐색(M4 잔여).** VS Code 확장은 `Open Preview` 명령, 자동 갱신, Problems, 경고 표시까지 동작하며, 호스트는 실제 프로젝트 XAML(x:Class/이벤트/Window 루트/병합 사전/사용자 타입 자리표시자)을 렌더한다. **`App.xaml`에만 있는 리소스와 사용자 컨트롤의 실제 렌더는 아직 안 된다**(02 문서 M4 결과의 제한 목록 참고).
+**M0~M4 완료(App.xaml 리소스 탐색 포함). 다음은 M4B(프로젝트 인식 렌더링).** VS Code 확장은 `Open Preview` 명령, 자동 갱신, Problems, 경고 표시까지 동작하며, 호스트는 실제 프로젝트 XAML(x:Class/이벤트/Window 루트/병합 사전/사용자 타입 자리표시자)을 렌더한다. **사용자 컨트롤의 실제 렌더는 아직 안 된다(자리표시자)**(02 문서 M4 결과의 제한 목록 참고).
 
 ## 2. 확정된 전제 (사용자 결정)
 - **Windows 전용.** (2026-10-06 사용자 확정)
@@ -20,7 +20,7 @@
 | M1 렌더 호스트 핵심 | ✅ 완료 | 골든 14종, 크기 규칙, 구조화 오류 |
 | M2 프로토콜 + 프로세스 관리 | ✅ 완료 | serve 모드, 로거, HostClient, 장애 주입 |
 | M3 확장 MVP | ✅ 완료 | 미리보기 패널, 자동 갱신, Problems, 통합 테스트 5개(I-01~I-05) |
-| M4 XAML 해석 충실도 | ✅ 완료(App.xaml 리소스 제외) | x:Class/이벤트 제거, d:/mc:, 병합 사전, 자리표시자, Window 루트 |
+| M4 XAML 해석 충실도 | ✅ 완료(App.xaml 리소스 포함) | x:Class/이벤트 제거, d:/mc:, 병합 사전, 자리표시자, Window 루트 |
 | **M4B 프로젝트 인식 렌더링(Tier 1)** | ⏭ **다음** | 사용자 컨트롤 DLL 로드, Workspace Trust |
 | M5 상호작용 | 대기 | 줌/팬, HitMap, 클릭 → 줄 이동 |
 | M6 패키징 + 문서 | 대기 | 호스트 번들, `.vsix`, VS 없는 PC 검증 |
@@ -39,7 +39,7 @@ host/                              ← .NET 10 WPF 렌더 호스트 (XamlRenderH
     Protocol/RequestHandler.cs     ← JSON 요청 → 응답 (ping/render/shutdown, debug.* 는 훅 켜졌을 때만)
     Protocol/ProtocolLoop.cs       ← stdin/stdout 스레드 구조
     Logging/HostLogger.cs, FileLogSink.cs ← 비동기 큐 로거, 1MB×5 회전
-  XamlRenderHost.Tests/            ← MSTest 78개 (골든, 크기, 오류, 프로토콜, 로그, CLI)
+  XamlRenderHost.Tests/            ← MSTest 87개 (골든, 크기, 오류, 프로토콜, 로그, CLI)
     Fixtures/{xaml,golden}/        ← 골든 PNG 10종 (눈으로 확인 완료)
 extension/                         ← VS Code 확장 (TypeScript)
   src/extension.ts                 ← activate: 출력 채널 + E001 로그만
@@ -57,7 +57,7 @@ git clone https://github.com/PhulGrimLab/WPFXamlViewer_VSCode.git
 cd WPFXamlViewer_VSCode
 .\doc\check_environment.ps1        # 없는 항목은 설치 방법을 안내한다
 cd extension; npm install; cd ..   # 확장 의존성 (node_modules는 git에 없다)
-.\tools\ci\ci.ps1                  # 전체 검증 — 호스트 58 + 확장 17 + 실제 호스트 8 이 모두 통과해야 정상
+.\tools\ci\ci.ps1                  # 전체 검증 — 호스트 87 + 확장 30 + 실제 호스트 9 + 통합 5(-IncludeIntegration) 이 모두 통과해야 정상
 ```
 - 필요 도구: .NET SDK 10, **.NET 10 Desktop Runtime**, Node.js LTS, VS Code, git. (Visual Studio는 필요 없다.)
 - 새 터미널에서 `node`가 안 잡히면 PATH 갱신 문제다(설치 직후). `ci.ps1`은 머신/사용자 PATH를 다시 합쳐서 실행한다.
@@ -71,7 +71,7 @@ cd extension; npm install; cd ..   # 확장 의존성 (node_modules는 git에 �
 1. **다른 PC/OS 버전에서 골든 일치 여부 미검증.** 이 머신(Windows 11 Pro 10.0.26300)에서만 확인. 5회 반복 렌더는 바이트 동일.
 2. 거대 XAML 시험은 단순 도형 5,000개뿐. 템플릿/바인딩이 무거운 실제 화면의 성능은 모른다.
 3. `debug.hang`은 호스트 스레드 정지 시뮬레이션. 사용자 컨트롤의 실제 무한 루프 kill은 M4B에서 재검증(B.6).
-4. `App.xaml` 리소스 자동 탐색 미구현, 해석 불가 타입이 요소가 아닌 자리(`TargetType`, `{x:Type}`, `{x:Static}`)에 있으면 오류(02 문서 M4 결과 참고).
+4. 해석 불가 타입이 요소가 아닌 자리(`TargetType`, `{x:Type}`, `{x:Static}`)에 있으면 오류(02 문서 M4 결과 참고).
 5. `npm audit`: 개발 의존성(mocha 계열) 취약점 3건. `.vsix`에는 포함되지 않음. M6 패키징 전에 mocha 버전 재검토.
 6. **GitHub Actions 등 CI 워크플로는 없다.** `tools/ci/ci.ps1`은 로컬/CI 공용 진입점이지만 CI 서비스는 미정.
 7. 확장 이름 `wpf-xaml-viewer`, 게시자 `phulgrimlab`은 **임시값**(package.json). 게시 계획이 생기면 확정 필요.

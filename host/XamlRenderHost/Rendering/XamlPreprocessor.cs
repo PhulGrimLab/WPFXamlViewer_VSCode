@@ -40,7 +40,7 @@ public static class WarningCodes
 /// (열은 같은 줄에서 바뀐 부분 뒤에서만 어긋날 수 있다).
 /// 상태가 없는 정적 클래스(스레드 안전). XML이 올바르지 않으면 XmlMalformed <see cref="XamlRenderException"/>을 던진다.
 /// </summary>
-public static class XamlPreprocessor
+public static partial class XamlPreprocessor
 {
     /// <summary>XAML 언어 네임스페이스(x:).</summary>
     private const string XamlLanguageNamespace = "http://schemas.microsoft.com/winfx/2006/xaml";
@@ -106,6 +106,7 @@ public static class XamlPreprocessor
         }
         var context = new Context(visited);
         var processed = ProcessInternal(xaml, filePath, context, depth: 0);
+        processed = InjectApplicationResources(processed, filePath, context);
         return new PreprocessResult(processed, context.Warnings);
     }
 

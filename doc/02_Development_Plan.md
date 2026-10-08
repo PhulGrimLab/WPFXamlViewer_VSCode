@@ -125,12 +125,22 @@ WPFXamlViewer_VSCode/
 - 검증: 호스트 78개(신규 20: H-X01~X06, H-W01~W02, H-U01~U02, H-RD01~RD04, 골든 R11~R14 눈으로 확인), 실제 호스트 + HostClient 9개(신규: x:Class/이벤트 경고 + filePath 병합).
 - 테스트 프로젝트: `Fixtures/**/*.xaml`을 WPF Page로 컴파일하지 않도록 제외(해석 불가 타입 픽스처가 빌드 오류가 되므로).
 - **미검증/제한 (실제 프로젝트 XAML에서 만날 수 있는 것)**:
-  1. `App.xaml` 리소스 자동 탐색은 **미구현**(4.3의 후반). 그래서 App.xaml에만 있는 리소스를 `{StaticResource}`로 쓰면 XamlParse 오류가 난다. 가장 흔한 실사용 실패 원인일 가능성이 크다.
+  1. ~~`App.xaml` 리소스 자동 탐색 미구현~~ → **구현 완료**(아래 "M4 잔여: App.xaml" 참고).
   2. 해석 불가 타입이 **요소가 아닌 자리**(`TargetType="local:Foo"`, `{x:Type local:Foo}`, `{x:Static local:Foo.Bar}`, `{local:MyExtension}`, `Style TargetType`)에 쓰이면 자리표시자로 대체되지 않고 XamlParse 오류가 난다.
   3. 자리표시자는 자식을 버린다(사용자 컨트롤 안의 내용은 보이지 않는다). Tier 1(M4B)에서 실제 렌더 예정.
   4. `Window`의 `SizeToContent`, `WindowStyle`, 타이틀바는 무시한다(콘텐츠만, 명시 크기 우선).
   5. 이벤트 판별은 WPF 기본 네임스페이스 타입 기준이다. 해석되는 사용자 타입의 이벤트는 그 타입이 로드될 때(M4B)만 알 수 있다.
   6. 기존 골든 PNG 10개를 이 PC(Windows 10)에서 `XAMLVIEWER_UPDATE_GOLDEN=1`로 다시 만들면 **바이트가 달랐다**(허용오차 안이라 비교 테스트는 두 머신 모두 통과). 원본(Windows 11에서 만든 것)은 되돌려 두었고 신규 골든 4개만 이 PC에서 생성했다. 허용오차를 넘는 차이가 생기면 03 문서 2절 절차(원인 확정 먼저)를 따른다.
+
+**M4 잔여: App.xaml 리소스 자동 탐색 결과 (2026-10-08)**
+- 구현(`XamlPreprocessor.AppResources.cs`): 문서 폴더에서 위로 올라가며 가장 가까운 `App.xaml`을 찾는다(**`.csproj`가 있는 폴더가 프로젝트 경계** — 거기서 멈춰 다른 프로젝트의 App.xaml을 쓰지 않는다, 최대 6단계). `Application.Resources`를 전처리(App.xaml 안의 병합 사전/자리표시자 포함)한 뒤, 문서 루트의 `Resources`에 **맨 앞 병합 사전**으로 텍스트 주입한다(문서 자신의 리소스가 앱 리소스보다 우선). 주입 조각은 줄바꿈이 없어 오류 줄 번호가 보존된다.
+- 주입 경우: 루트에 Resources 없음 / 명시 ResourceDictionary(MergedDictionaries가 있으면 그 앞, 없으면 생성) / 항목만 나열한 암시적 사전(ResourceDictionary로 감쌈) / 자기 닫는 루트.
+- **실측 함정 2가지(둘 다 테스트로 고정)**:
+  1. WPF `XamlReader`는 **속성 요소에 붙인 `xmlns` 선언을 거부**한다("PROPERTYELEMENT 예기치 않음"). 객체 요소에 접두사(`rxapp`)를 선언하고 속성 요소를 그 접두사로 쓴다.
+  2. 루트 요소 **자신의** `Width="{StaticResource W}"` 같은 속성은 같은 요소의 `Resources` 속성 요소보다 먼저 평가돼 주입한 리소스를 못 본다. 그래서 루트의 단순 `{StaticResource Key}` 속성은 속성 요소(`<Root.Width><StaticResource .../></Root.Width>`)로 옮겨 Resources 뒤에 둔다(접두사/연결 속성/복합 값은 제외).
+- App.xaml 자체의 `x:Class`/`Startup=` 등 제거 경고는 사용자 문서와 무관해 버리고, 자리표시자/사전 문제만 "App.xaml:" 접두에 줄 번호 없이 경고로 전달한다.
+- 검증: 호스트 87개(신규 9: H-RD05~RD13 — 항목 없음/명시 사전/기존 병합/암시적 사전/테마 상대 경로/자리표시자 경고/자기 닫는 루트+줄 번호/프로젝트 경계/App.xaml 없음).
+- **미검증/제한**: App.xaml이 `Application.Resources`를 **코드 비하인드에서** 채우는 경우, 루트 아닌 요소의 속성에서 쓰는 `StaticResource`가 같은 요소의 자기 Resources를 가리키는 경우(WPF 컴파일 동작과 다를 수 있음), 루트의 복합 값(`{StaticResource K}` 이외 마크업)은 처리하지 않는다. 앱 리소스가 매우 큰 경우 매 렌더마다 App.xaml을 다시 읽고 전처리한다(캐시 없음; 성능은 미측정).
 
 ### M4B. 프로젝트 인식 렌더링 (Tier 1 — 사용자 정의 컨트롤 실제 렌더)
 설계: 01 문서 §3.3. 사용자 코드가 실행되므로 이 마일스톤은 **격리·신뢰 검증이 핵심**이다.

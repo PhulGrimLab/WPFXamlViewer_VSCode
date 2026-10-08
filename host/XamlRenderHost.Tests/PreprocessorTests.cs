@@ -111,7 +111,7 @@ public class PreprocessorTests
     }
 
     /// <summary>임시 폴더에 파일들을 만들고 mainFile을 렌더한다. 끝나면 폴더를 지운다.</summary>
-    private static RenderResult RenderWithFiles(Dictionary<string, string> files, string mainFile)
+    internal static RenderResult RenderWithFiles(Dictionary<string, string> files, string mainFile)
     {
         var dir = Path.Combine(Path.GetTempPath(), "xamlviewer-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
