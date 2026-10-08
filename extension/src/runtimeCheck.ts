@@ -37,4 +37,4 @@ export function isDotNetRuntimeMissing(error: Error): boolean {
 
 /** 사용자에게 보여 줄 안내 문장. */
 export const DOTNET_RUNTIME_MISSING_MESSAGE =
-    'WPF XAML Viewer: .NET 10 Desktop Runtime이 설치되어 있지 않아 렌더 호스트를 시작할 수 없습니다. 설치한 뒤 다시 시도하세요.';
+    'WPF XAML Live Preview: .NET 10 Desktop Runtime이 설치되어 있지 않아 렌더 호스트를 시작할 수 없습니다. 설치한 뒤 다시 시도하세요.';

@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    WPF XAML Viewer 개발 환경을 점검한다 (doc/00_Environment_Setup_Guide.md 2절의 표).
+    WPF XAML Live Preview 개발 환경을 점검한다 (doc/00_Environment_Setup_Guide.md 2절의 표).
 
 .DESCRIPTION
     빠진 항목은 설치 방법만 안내하고 자동으로 설치하지 않는다
@@ -26,7 +26,7 @@ function Get-FirstLine([scriptblock]$Command) {
     try { return (& $Command 2>$null | Select-Object -First 1) } catch { return $null }
 }
 
-Write-Host "WPF XAML Viewer 환경 점검" -ForegroundColor Cyan
+Write-Host "WPF XAML Live Preview 환경 점검" -ForegroundColor Cyan
 
 # Windows 전용 제품이다(doc/01 1절).
 $isWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT

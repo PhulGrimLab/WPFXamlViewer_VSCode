@@ -49,6 +49,8 @@ Write-Host "== 스테이징 복사" -ForegroundColor Cyan
 Copy-Item (Join-Path $ExtensionDir "package.json") $Stage
 Copy-Item (Join-Path $ExtensionDir ".vscodeignore") $Stage
 Copy-Item (Join-Path $ExtensionDir "README.md") $Stage
+Copy-Item (Join-Path $ExtensionDir "CHANGELOG.md") $Stage
+Copy-Item (Join-Path $ExtensionDir "icon.png") $Stage
 Copy-Item (Join-Path $RepoRoot "LICENSE") $Stage
 New-Item -ItemType Directory -Force (Join-Path $Stage "out") | Out-Null
 Copy-Item (Join-Path $ExtensionDir "out\src") (Join-Path $Stage "out\src") -Recurse
@@ -62,6 +64,12 @@ Invoke-Native "vsce package" {
     try { & (Join-Path $ExtensionDir "node_modules\.bin\vsce.cmd") package --no-dependencies --out $vsixPath } finally { Pop-Location }
 }
 
+# 배포 확인용 체크섬: 내려받은 사람이 `Get-FileHash`로 같은 값인지 비교할 수 있게 같은 폴더에 SHA256SUMS.txt를 만든다.
+$hash = (Get-FileHash $vsixPath -Algorithm SHA256).Hash.ToLowerInvariant()
+$sumsPath = Join-Path $Artifacts "SHA256SUMS.txt"
+Set-Content -Path $sumsPath -Value ("{0}  {1}" -f $hash, (Split-Path -Leaf $vsixPath)) -Encoding ascii
+
 $size = [math]::Round((Get-Item $vsixPath).Length / 1MB, 2)
 Write-Host "생성됨: $vsixPath ($size MB)" -ForegroundColor Green
+Write-Host "SHA256: $hash" -ForegroundColor Green
 Write-Output $vsixPath

@@ -1,4 +1,4 @@
-# WPF XAML Viewer
+# WPF XAML Live Preview
 
 VS Code에서 `.xaml` 파일을 편집하면서 **실제 WPF 렌더링 결과**를 옆 패널에서 바로 확인합니다.
 Visual Studio 없이 .NET SDK 10으로 WPF 프로젝트를 개발할 때 쓰는 것을 목표로 합니다. **Windows 전용.**

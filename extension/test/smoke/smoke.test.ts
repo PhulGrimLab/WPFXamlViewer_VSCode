@@ -4,7 +4,7 @@ import * as vscode from 'vscode';
 import { COMMAND_OPEN_PREVIEW } from '../../src/constants';
 import { ExtensionTestApi } from '../../src/extension';
 
-const EXTENSION_ID = 'phulgrimlab.wpf-xaml-viewer';
+const EXTENSION_ID = 'phulgrimlab.wpf-xaml-live-preview';
 
 /** 설치 스모크 대기 상한(ms): 첫 렌더는 호스트 시작 + 프로젝트 DLL 로드가 겹친다. */
 const RENDER_WAIT_MS = 90_000;

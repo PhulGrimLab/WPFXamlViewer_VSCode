@@ -5,7 +5,7 @@
 > 최신 커밋은 `git log`로 확인할 것(이 문서는 커밋 해시를 박지 않는다).
 
 ## 1. 한 줄 요약
-**M0~M6 구현 완료. 남은 것: ① [doc/05](./05_Clean_Machine_Verification.md) 깨끗한 PC 검증(미실행) ② 웹뷰 마우스 동작(드래그/휠/클릭)을 실제로 써 보기 ③ 이름/게시자 확정과 배포.** VS Code 확장은 `Open Preview` 명령, 자동 갱신, Problems, 경고 표시까지 동작하며, 호스트는 실제 프로젝트 XAML(x:Class/이벤트/Window 루트/병합 사전/사용자 타입 자리표시자)을 렌더한다. **신뢰된 워크스페이스에서는 프로젝트 빌드 DLL의 사용자 컨트롤이 실제로 그려진다(빌드 산출물이 있어야 함)**(02 문서 M4/M4B 결과의 제한 목록 참고).
+**M0~M6 구현 완료. 남은 것: ① [doc/05](./05_Clean_Machine_Verification.md) 깨끗한 PC 검증(미실행) ② 웹뷰 마우스 동작(드래그/휠/클릭)을 실제로 써 보기 ③ 첫 GitHub Release 생성([06](./06_Release_Process.md), 사용자 확인 후).** VS Code 확장은 `Open Preview` 명령, 자동 갱신, Problems, 경고 표시까지 동작하며, 호스트는 실제 프로젝트 XAML(x:Class/이벤트/Window 루트/병합 사전/사용자 타입 자리표시자)을 렌더한다. **신뢰된 워크스페이스에서는 프로젝트 빌드 DLL의 사용자 컨트롤이 실제로 그려진다(빌드 산출물이 있어야 함)**(02 문서 M4/M4B 결과의 제한 목록 참고).
 
 ## 2. 확정된 전제 (사용자 결정)
 - **Windows 전용.** (2026-10-06 사용자 확정)
@@ -74,7 +74,7 @@ cd extension; npm install; cd ..   # 확장 의존성 (node_modules는 git에 �
 4. 해석 불가 타입이 요소가 아닌 자리(`TargetType`, `{x:Type}`, `{x:Static}`)에 있으면 오류(02 문서 M4 결과 참고).
 5. `npm audit`: 개발 의존성(mocha 계열) 취약점 3건. `.vsix`에는 포함되지 않음. M6 패키징 전에 mocha 버전 재검토.
 6. **GitHub Actions 등 CI 워크플로는 없다.** `tools/ci/ci.ps1`은 로컬/CI 공용 진입점이지만 CI 서비스는 미정.
-7. 확장 이름 `wpf-xaml-viewer`, 게시자 `phulgrimlab`은 **임시값**(package.json). 게시 계획이 생기면 확정 필요.
+7. 확장 이름/게시자는 **확정**(`phulgrimlab.wpf-xaml-live-preview`, 2026-10-08). 릴리스는 **아직 만들지 않았다** — 절차는 [06](./06_Release_Process.md).
 
 ## 7. 미결 결정 (사용자 응답 없이 제안값으로 진행 중)
 | 항목 | 제안(현재 적용) | 영향 시점 |
@@ -82,7 +82,7 @@ cd extension; npm install; cd ..   # 확장 의존성 (node_modules는 git에 �
 | 호스트 배포 방식 | 프레임워크 종속(.NET 10 Desktop Runtime 필요, 없으면 설치 안내) | M6 |
 | 미신뢰 폴더 정책 | Workspace Trust 아니면 자리표시자만(Tier 0) | M4B |
 | 지원 TFM 하한 | net8.0-windows 이상 공식, 레거시는 "그려지면 다행" | M4 |
-| 확장 이름/게시자 | 임시값 유지 | M6 |
+| 확장 이름/게시자 | **확정**: WPF XAML Live Preview / phulgrimlab | 완료 |
 
 ## 8. 다음 작업: M3 시작 가이드
 02 문서 M3 표(3.1~3.4)가 기준이다. 시작 전 알아둘 점:

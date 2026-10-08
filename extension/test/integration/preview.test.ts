@@ -8,7 +8,7 @@ import { ExtensionTestApi } from '../../src/extension';
 const NS = 'xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"';
 const VALID_XAML = `<Button ${NS} Width="120" Height="40" Content="Hello"/>`;
 const INVALID_XAML = `<Button ${NS} Width="120" Height="40" Content="Hello">`;
-const EXTENSION_ID = 'phulgrimlab.wpf-xaml-viewer';
+const EXTENSION_ID = 'phulgrimlab.wpf-xaml-live-preview';
 
 async function waitUntil(condition: () => boolean, timeoutMs = 20000): Promise<void> {
     const start = Date.now();

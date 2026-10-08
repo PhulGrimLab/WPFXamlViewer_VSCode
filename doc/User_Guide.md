@@ -1,4 +1,4 @@
-# WPF XAML Viewer 사용자 가이드
+# WPF XAML Live Preview 사용자 가이드
 
 > 이 확장의 목적: **Visual Studio 없이 VS Code에서 .NET 10 SDK로 WPF 프로젝트를 개발**하면서, XAML 화면(UI)을
 > 편집 중에 실제 WPF 렌더링 결과로 바로 확인하는 것. Windows 전용.
@@ -101,10 +101,10 @@ Tier 1은 프로젝트의 **사용자 코드(생성자 등)를 이 PC에서 그�
 | 사용자 컨트롤이 붉은 박스로 보임 | 상태 표시줄 경고의 `ProjectTier0` 이유를 본다: 폴더 미신뢰 → 신뢰, 산출물 없음 → `dotnet build`. |
 | 사용자 컨트롤이 주황 박스로 보임 | 생성자 예외다. 경고 목록에 예외 요약이 있다. 생성자에서 디자인 모드를 고려하도록 고친다. |
 | `{StaticResource X}` 오류 | 리소스가 `App.xaml` 또는 문서/병합 사전 안에 있어야 한다(코드 비하인드에서 추가하는 리소스는 볼 수 없다). |
-| 화면이 갱신되지 않음 | Problems 패널과 출력 채널 **WPF XAML Viewer** 를 확인한다. 호스트가 죽으면 다음 편집에서 자동으로 다시 시작한다. |
+| 화면이 갱신되지 않음 | Problems 패널과 출력 채널 **WPF XAML Live Preview** 를 확인한다. 호스트가 죽으면 다음 편집에서 자동으로 다시 시작한다. |
 
 ## 9. 로그
 
-- 확장 로그: VS Code 출력 패널의 **WPF XAML Viewer** 채널. 형식은 `[LEVEL] E0xx 메시지`.
+- 확장 로그: VS Code 출력 패널의 **WPF XAML Live Preview** 채널. 형식은 `[LEVEL] E0xx 메시지`.
 - 호스트 로그: 확장의 전역 저장소 폴더 아래 `logs/host.log`(1MB × 5개 회전). `H0xx` ID로 기록되며 XAML 본문은 남기지 않는다.
 - 주요 ID: `E010` 호스트 시작, `E011` 타임아웃(kill), `E012` 호스트 종료/실패, `H020` 사용자 DLL 로드, `H022` 사용자 컨트롤 예외, `H023` Tier 결정.

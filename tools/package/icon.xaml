@@ -1,0 +1,47 @@
+<!--
+  확장 아이콘 원본. 이 확장의 렌더 호스트로 PNG를 만든다(도구가 실제로 동작하는지의 증거이기도 하다):
+    XamlRenderHost.exe render (입력 tools\package\icon.xaml, 출력 extension\icon.png) - 옵션은 tools\package\make_icon.ps1 참고
+  128x128 논리 크기를 Viewbox로 256x256 픽셀로 키워 선명하게 만든다.
+-->
+<Viewbox xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Width="256" Height="256" Stretch="Uniform">
+  <Grid Width="128" Height="128">
+    <Border CornerRadius="26">
+      <Border.Background>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+          <GradientStop Color="#FF2563EB" Offset="0"/>
+          <GradientStop Color="#FF7C3AED" Offset="1"/>
+        </LinearGradientBrush>
+      </Border.Background>
+    </Border>
+
+    <!-- 미리보기 창 -->
+    <Border Margin="20,22,20,30" CornerRadius="10" Background="#FFFFFFFF" ClipToBounds="True">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="16"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Border Background="#FFE5E7EB">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="7,0,0,0">
+            <Ellipse Width="5" Height="5" Fill="#FFEF4444" Margin="0,0,3,0"/>
+            <Ellipse Width="5" Height="5" Fill="#FFF59E0B" Margin="0,0,3,0"/>
+            <Ellipse Width="5" Height="5" Fill="#FF22C55E"/>
+          </StackPanel>
+        </Border>
+        <StackPanel Grid.Row="1" Margin="9,9,9,0">
+          <Border Height="9" Width="46" CornerRadius="4" Background="#FF1F2937" HorizontalAlignment="Left"/>
+          <Border Height="7" CornerRadius="3" Background="#FFCBD5E1" Margin="0,7,0,0"/>
+          <Border Height="7" Width="58" CornerRadius="3" Background="#FFCBD5E1" Margin="0,5,0,0" HorizontalAlignment="Left"/>
+          <Border Height="15" Width="38" CornerRadius="5" Background="#FF2563EB" Margin="0,9,0,0" HorizontalAlignment="Left"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- 코드(XAML) 배지 -->
+    <Border Width="52" Height="30" CornerRadius="15" Background="#FF111827" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,10"
+            BorderBrush="#FFFFFFFF" BorderThickness="2">
+      <TextBlock Text="&lt;/&gt;" Foreground="#FFFFFFFF" FontFamily="Consolas" FontWeight="Bold" FontSize="15"
+                 HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    </Border>
+  </Grid>
+</Viewbox>

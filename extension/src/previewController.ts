@@ -10,7 +10,7 @@ import { Background, ToWebviewMessage, parseFromWebview } from './previewMessage
 import { DOTNET_DESKTOP_RUNTIME_URL, DOTNET_RUNTIME_MISSING_MESSAGE, isDotNetRuntimeMissing } from './runtimeCheck';
 
 /** 진단/상태 표시에 쓰는 출처 이름. */
-const DIAGNOSTIC_SOURCE = 'WPF XAML Viewer';
+const DIAGNOSTIC_SOURCE = 'WPF XAML Live Preview';
 
 /** 웹뷰 nonce 길이(바이트). */
 const NONCE_BYTES = 16;
@@ -322,7 +322,7 @@ export class PreviewController implements vscode.Disposable {
                 }
             });
         } else {
-            void vscode.window.showErrorMessage(`WPF XAML Viewer: ${error.message} (자세한 내용은 출력 채널 확인)`);
+            void vscode.window.showErrorMessage(`WPF XAML Live Preview: ${error.message} (자세한 내용은 출력 채널 확인)`);
         }
     }
 

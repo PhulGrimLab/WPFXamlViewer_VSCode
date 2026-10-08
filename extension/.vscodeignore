@@ -1,8 +1,10 @@
-# .vsix에는 컴파일된 확장(out/src)과 번들된 호스트(bin/host)만 넣는다. 소스/테스트/개발 도구는 제외.
+# .vsix에는 컴파일된 확장(out/src)과 번들된 호스트(bin/host), 문서/아이콘만 넣는다. 소스/테스트/개발 도구는 제외.
 **
 !package.json
 !README.md
+!CHANGELOG.md
 !LICENSE
+!icon.png
 !out/src/**
 !bin/host/**
 out/src/**/*.map

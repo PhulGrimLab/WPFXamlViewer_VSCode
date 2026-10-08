@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 import { COMMAND_OPEN_PREVIEW } from '../../src/constants';
 import { ExtensionTestApi } from '../../src/extension';
 
-const EXTENSION_ID = 'phulgrimlab.wpf-xaml-viewer';
+const EXTENSION_ID = 'phulgrimlab.wpf-xaml-live-preview';
 
 /** I-05: 존재하지 않는 호스트 경로 → 안내 알림 + E012 로그, 확장은 계속 살아 있다. */
 describe('호스트 없음 통합 (I-05)', () => {

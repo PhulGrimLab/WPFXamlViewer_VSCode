@@ -12,7 +12,7 @@
 - .NET 런타임이 없는 환경(`DOTNET_ROOT`를 빈 폴더로)에서 호스트가 죽고 확장이 이를 "런타임 없음"으로 식별한다(I-12, 실제 호스트).
 
 ## 깨끗한 PC에서 사람이 확인할 것
-준비물: Windows 10/11 x64, **Visual Studio 미설치**, **.NET 미설치**(또는 Windows Sandbox / 새 VM), 인터넷, 이 저장소의 `artifacts\wpf-xaml-viewer-*.vsix`.
+준비물: Windows 10/11 x64, **Visual Studio 미설치**, **.NET 미설치**(또는 Windows Sandbox / 새 VM), 인터넷, 이 저장소의 `artifacts\wpf-xaml-live-preview-*.vsix`.
 
 자동화 시도: `tools\verify\clean_machine.wsb` (Windows Sandbox) — `sandbox_bootstrap.ps1`이 .NET SDK 10/VS Code 설치, `.vsix` 설치, 샘플 프로젝트 생성/빌드까지 한다. 이 스크립트도 **실행해 본 적이 없다.**
 

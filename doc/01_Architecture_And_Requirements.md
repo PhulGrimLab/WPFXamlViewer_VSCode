@@ -165,6 +165,6 @@ stdout은 **프로토콜 전용**, 로그는 절대 stdout에 쓰지 않는다(�
    **제안: 프레임워크 종속** — 사용자는 어차피 .NET SDK로 프로젝트를 빌드하므로 런타임이 있다. 다른 선택이 필요하면 알려 주세요.
 2. **Tier 1(프로젝트 DLL 로드)이 1차 범위**로 올라왔다. 사용자 코드 실행이 수반되므로 Workspace Trust 요구가 §3.3의
    전제인데, 이 정책(미신뢰 폴더에서는 자리표시자만)이 괜찮은지 확인이 필요하다.
-3. **확장 이름/게시자 ID** — 임시로 `wpf-xaml-viewer`. Marketplace 게시 계획이 있으면 publisher 필요.
+3. ~~확장 이름/게시자 ID~~ → **확정(2026-10-08)**: 표시 이름 `WPF XAML Live Preview`, name `wpf-xaml-live-preview`, 게시자 `phulgrimlab` (확장 ID `phulgrimlab.wpf-xaml-live-preview`). 배포는 GitHub Release의 `.vsix`(doc/06). Marketplace 게시는 하지 않았다.
 4. 호스트 **x64 고정** 가정. 32비트 전용 사용자 컨트롤은 지원하지 않는다. (ARM64 Windows는 필요 시 후속 검토.)
 5. **지원 TFM 하한**: net8.0-windows 이상을 공식 지원, net48/레거시는 "그려지면 다행" 수준(M4에서 실측 후 확정).

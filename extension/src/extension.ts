@@ -36,7 +36,7 @@ export interface ExtensionTestApi {
 const TEST_LOG_BUFFER_MAX = 200;
 
 /** 출력 채널 이름. */
-const OUTPUT_CHANNEL_NAME = 'WPF XAML Viewer';
+const OUTPUT_CHANNEL_NAME = 'WPF XAML Live Preview';
 
 /**
  * 확장 진입점. 출력 채널을 만들고 E001 로그를 남긴 뒤, 호스트를 찾아 HostClient와 미리보기 명령을 등록한다.
@@ -75,7 +75,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         log('Error', LogId.HostCrashed, 'host exe not found');
         context.subscriptions.push(vscode.commands.registerCommand(COMMAND_OPEN_PREVIEW, () => {
             void vscode.window.showErrorMessage(
-                'WPF XAML Viewer: 렌더 호스트(XamlRenderHost.exe)를 찾을 수 없습니다. `dotnet build host/XamlRenderHost.slnx`로 빌드하거나 XAMLVIEWER_HOST_EXE를 설정하세요.');
+                'WPF XAML Live Preview: 렌더 호스트(XamlRenderHost.exe)를 찾을 수 없습니다. `dotnet build host/XamlRenderHost.slnx`로 빌드하거나 XAMLVIEWER_HOST_EXE를 설정하세요.');
         }));
         return api;
     } else {
