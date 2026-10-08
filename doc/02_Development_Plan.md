@@ -203,6 +203,14 @@ WPFXamlViewer_VSCode/
 | 6.3 | `doc/User_Guide.md`, README 갱신 | 문서 내 명령/설정 이름이 package.json과 일치(린트 테스트) |
 | 6.4 | **VS 미설치 환경 검증**: VS 없는 Windows(VM/Windows Sandbox)에서 `.vsix` 설치 → 실제 net10 WPF 샘플 프로젝트 미리보기 | 체크리스트(가능하면 Sandbox 스크립트로 자동화), 결과를 문서에 기록 |
 
+**M6 결과 (2026-10-08)** — 6.1~6.3 완료 / **6.4(VS 없는 깨끗한 PC 검증)는 수행하지 못했다**
+- **6.1/6.2 패키징**: `tools/package/build_vsix.ps1`(= `npm run package`)가 `artifacts/vsix-stage`에 필요한 파일만 모아 거기서 `vsce package --no-dependencies`를 실행한다. 호스트는 `dotnet publish -c Release -r win-x64 --self-contained false`로 `bin/host/`에 번들(exe + dll + deps.json + runtimeconfig, 4개 파일). **결과 `.vsix` 약 160KB**(프레임워크 종속이라 .NET 10 Desktop Runtime이 사용자 PC에 필요). `.vscodeignore`는 `out/src`와 `bin/host`만 포함한다. 스테이징을 쓰는 이유: 개발 트리에 `extension/bin/host`가 생기면 `hostLocator`가 번들 위치를 먼저 보므로 테스트가 개발 빌드 대신 낡은 번들 호스트를 집어 갈 수 있다. 라이선스는 `GPL-3.0-only`(LICENSE 파일을 스테이징에 복사).
+- **I-09 설치 스모크**(`npm run test:smoke`, `ci.ps1 -IncludePackage`): `.vsix`를 임시 user-data/extensions 폴더에 `--install-extension`으로 설치 → `dotnet new wpf --framework net10.0`으로 만든 실제 프로젝트에 App.xaml 리소스, `x:Class`/이벤트, 사용자 컨트롤(`Badge`)을 얹어 빌드 → **개발 확장 없이 설치본만** 로드한 VS Code에서 확인: 설치 폴더의 확장이 활성화, 호스트 경로가 설치 폴더의 `bin\host`, MainWindow가 800x450으로 그려짐, 경고에 `RemovedClassAttribute`/`RemovedEventHandler`는 있고 `PlaceholderUsed`/`ProjectTier0`는 없음(Tier 1 동작), 요소 3개 이상 매핑. 첫 실행에 통과.
+- **I-12 .NET 런타임 없음**: 실측 — 런타임이 없으면 apphost가 종료 코드 `0x80008083`(-2147450749)과 stderr "You must install .NET to run this application."을 낸다(`DOTNET_ROOT_X64`가 지정되면 그 위치만 찾는다). `runtimeCheck.ts`가 종료 코드(부호 있는/없는 표현) 또는 문구로 식별해 설치 안내 알림(+ 설치 페이지 열기 버튼)을 띄운다. 검증: 단위 3개 + **실제 호스트를 빈 `DOTNET_ROOT`로 띄워** HostCrashedError가 "런타임 없음"으로 식별됨(알림 UI 자체는 눈으로 확인하지 않음).
+- **6.3 문서**: `doc/User_Guide.md`(개발 흐름, 이 확장이 하는 일/안 하는 일, 명령, 미리보기 기능, 사용자 컨트롤/신뢰/보안, 변환 규칙과 경고 코드, 제한, 문제 해결, 로그), 루트 README와 `extension/README.md` 갱신. **린트(X-P01)**: package.json의 모든 명령 ID/제목이 가이드에 있고 가이드의 `wpfXamlViewer.*` 이름이 전부 package.json에 있으며, 설정이 없다는 문장이 사실과 맞는지 단위 테스트가 검사한다.
+- **6.4 미수행(사유)**: 개발 PC에는 Visual Studio 2017/2019/2022가 설치되어 있고 Windows Sandbox 기능이 꺼져 있어(켜려면 관리자 권한 + 재부팅) "VS 없는 PC"를 재현할 수 없었다. `tools/verify/clean_machine.wsb` + `sandbox_bootstrap.ps1`(.NET SDK 10/VS Code 설치 → .vsix 설치 → 샘플 생성/빌드 → VS Code 열기)을 **작성만 했고 실행해 보지 못했다**(URL/옵션이 어긋날 수 있음). 사람이 따를 체크리스트와 결과 기록표는 `doc/05_Clean_Machine_Verification.md`. 이 PC의 스모크는 SDK 10과 VS가 있는 환경이라는 점에서 깨끗한 PC 검증을 **대체하지 못한다**(특히 "런타임 없는 PC에서 첫 실행 → 설치 안내 → 설치 후 동작" 흐름).
+- **미검증/제한**: ① 위 6.4 전체 ② 확장 이름 `wpf-xaml-viewer`/게시자 `phulgrimlab`은 여전히 임시값(Marketplace 게시는 하지 않았고 `.vsix` 로컬 설치만 지원) ③ 아이콘/갤러리 배너/변경 이력 없음 ④ 호스트가 프레임워크 종속이라 런타임 설치가 사용자 몫(self-contained 번들은 `.vsix`가 수십~100MB+로 커져서 보류, 01 문서 §7 결정 유지) ⑤ `npm audit`의 개발 의존성(mocha 계열) 경고는 `.vsix`에 포함되지 않지만 정리하지 않았다 ⑥ 설치 스모크는 인터넷이 필요하다(VS Code 다운로드 캐시가 없을 때, `dotnet new` 템플릿/복원) ⑦ 서명되지 않은 `.vsix`/호스트 exe라 SmartScreen/백신이 경고할 수 있다.
+
 ## 3. 위험과 대응
 
 | 위험 | 영향 | 대응 |

@@ -5,13 +5,19 @@
 .DESCRIPTION
     doc/03_Test_Strategy.md 4절. 순서: 호스트(T1+T2) → 확장 단위(T3) → 확장+실제 호스트(T3R). 통합 테스트(T4/T5)는 VS Code 인스턴스가 필요해 -IncludeIntegration으로만 포함한다
     (M3에서 추가될 `npm run test:integration`).
+    패키징(.vsix 생성)과 설치 스모크(I-09)는 -IncludePackage로만 포함한다(dotnet publish + VS Code 설치가 들어 시간이 오래 걸린다).
 
 .PARAMETER IncludeIntegration
     확장 통합 테스트(T4/T5)도 실행한다. 아직 M3 전이라 스크립트가 없으면 건너뛴다고 알린다.
+
+.PARAMETER IncludePackage
+    .vsix를 만들고(tools/package/build_vsix.ps1) 임시 VS Code 프로필에 설치해 번들 호스트로 실제 net10 WPF 프로젝트를 미리보기하는
+    설치 스모크(npm run test:smoke)를 실행한다.
 #>
 [CmdletBinding()]
 param(
-    [switch]$IncludeIntegration
+    [switch]$IncludeIntegration,
+    [switch]$IncludePackage
 )
 
 $ErrorActionPreference = "Stop"
@@ -74,6 +80,22 @@ if ($IncludeIntegration) {
         Write-Host ""
         Write-Host "통합 테스트 스크립트(test:integration)가 아직 없습니다 - M3에서 추가 예정. 건너뜀." -ForegroundColor Yellow
     }
+}
+
+if ($IncludePackage) {
+    Invoke-Step "패키징 (.vsix 생성, 호스트 번들)" {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "tools\package\build_vsix.ps1")
+    }
+    Invoke-Step "설치 스모크 (I-09: .vsix 설치 + 번들 호스트 + 실제 WPF 프로젝트)" {
+        Push-Location $ExtensionDir
+        # VS Code가 진행 메시지를 stderr로 내보내므로 이 단계만 오류 처리를 낮추고 종료 코드로 판정한다(통합 테스트와 같은 이유).
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try { & npm run test:smoke } finally { $ErrorActionPreference = $previousPreference; Pop-Location }
+    }
+} else {
+    Write-Host ""
+    Write-Host "패키징/설치 스모크는 -IncludePackage 로 실행합니다(건너뜀)." -ForegroundColor Yellow
 }
 
 Write-Host ""

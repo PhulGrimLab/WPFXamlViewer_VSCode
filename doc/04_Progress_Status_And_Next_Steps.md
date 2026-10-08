@@ -5,7 +5,7 @@
 > 최신 커밋은 `git log`로 확인할 것(이 문서는 커밋 해시를 박지 않는다).
 
 ## 1. 한 줄 요약
-**M0~M5 완료. 다음은 M6(패키징 + 문서: 호스트 번들, `.vsix`, VS 없는 PC 검증). 그 전에 웹뷰 마우스 동작(드래그/휠/클릭)을 실제로 한 번 써 보며 확인하길 권한다.** VS Code 확장은 `Open Preview` 명령, 자동 갱신, Problems, 경고 표시까지 동작하며, 호스트는 실제 프로젝트 XAML(x:Class/이벤트/Window 루트/병합 사전/사용자 타입 자리표시자)을 렌더한다. **신뢰된 워크스페이스에서는 프로젝트 빌드 DLL의 사용자 컨트롤이 실제로 그려진다(빌드 산출물이 있어야 함)**(02 문서 M4/M4B 결과의 제한 목록 참고).
+**M0~M6 구현 완료. 남은 것: ① [doc/05](./05_Clean_Machine_Verification.md) 깨끗한 PC 검증(미실행) ② 웹뷰 마우스 동작(드래그/휠/클릭)을 실제로 써 보기 ③ 이름/게시자 확정과 배포.** VS Code 확장은 `Open Preview` 명령, 자동 갱신, Problems, 경고 표시까지 동작하며, 호스트는 실제 프로젝트 XAML(x:Class/이벤트/Window 루트/병합 사전/사용자 타입 자리표시자)을 렌더한다. **신뢰된 워크스페이스에서는 프로젝트 빌드 DLL의 사용자 컨트롤이 실제로 그려진다(빌드 산출물이 있어야 함)**(02 문서 M4/M4B 결과의 제한 목록 참고).
 
 ## 2. 확정된 전제 (사용자 결정)
 - **Windows 전용.** (2026-10-06 사용자 확정)
@@ -23,7 +23,7 @@
 | M4 XAML 해석 충실도 | ✅ 완료(App.xaml 리소스 포함) | x:Class/이벤트 제거, d:/mc:, 병합 사전, 자리표시자, Window 루트 |
 | M4B 프로젝트 인식 렌더링(Tier 1) | ✅ 완료(B.5 프로세스 분리 제외) | 사용자 컨트롤 DLL 로드, Workspace Trust |
 | M5 상호작용 | ✅ 완료(웹뷰 마우스 이벤트 실사용 미검증) | 줌/팬, HitMap, 클릭 → 줄 이동 |
-| **M6 패키징 + 문서** | ⏭ **다음** | 호스트 번들, `.vsix`, VS 없는 PC 검증 |
+| M6 패키징 + 문서 | ✅ 완료(6.4 깨끗한 PC 검증 제외) | 호스트 번들, `.vsix`, VS 없는 PC 검증 |
 
 ## 4. 현재 코드 구성
 
@@ -57,7 +57,7 @@ git clone https://github.com/PhulGrimLab/WPFXamlViewer_VSCode.git
 cd WPFXamlViewer_VSCode
 .\doc\check_environment.ps1        # 없는 항목은 설치 방법을 안내한다
 cd extension; npm install; cd ..   # 확장 의존성 (node_modules는 git에 없다)
-.\tools\ci\ci.ps1                  # 전체 검증 — 호스트 110 + 확장 40 + 실제 호스트 13 + 통합 9(-IncludeIntegration) 이 모두 통과해야 정상
+.\tools\ci\ci.ps1                  # 전체 검증 — 호스트 110 + 확장 46 + 실제 호스트 14 + 통합 9(-IncludeIntegration) + 설치 스모크 2(-IncludePackage) 이 모두 통과해야 정상
 ```
 - 필요 도구: .NET SDK 10, **.NET 10 Desktop Runtime**, Node.js LTS, VS Code, git. (Visual Studio는 필요 없다.)
 - 새 터미널에서 `node`가 안 잡히면 PATH 갱신 문제다(설치 직후). `ci.ps1`은 머신/사용자 PATH를 다시 합쳐서 실행한다.

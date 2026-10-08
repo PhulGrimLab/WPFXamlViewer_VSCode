@@ -7,6 +7,7 @@ import { HitElement, pickElementAt, pickElementAtCursor } from './hitTest';
 import { HostClient, HostRequestError, RenderWarning } from './hostClient';
 import { buildPreviewHtml } from './previewHtml';
 import { Background, ToWebviewMessage, parseFromWebview } from './previewMessages';
+import { DOTNET_DESKTOP_RUNTIME_URL, DOTNET_RUNTIME_MISSING_MESSAGE, isDotNetRuntimeMissing } from './runtimeCheck';
 
 /** 진단/상태 표시에 쓰는 출처 이름. */
 const DIAGNOSTIC_SOURCE = 'WPF XAML Viewer';
@@ -44,6 +45,7 @@ export class PreviewController implements vscode.Disposable {
     private _highlightedId: string | undefined;
     private _viewState: ViewState | undefined;
     private _size: { width?: number; height?: number } = {};
+    private _warningCodes: string[] = [];
 
     constructor(private readonly _client: HostClient) {
         this._subscriptions.push(
@@ -99,6 +101,11 @@ export class PreviewController implements vscode.Disposable {
     /** 테스트용: 웹뷰가 마지막으로 회신한 보기 상태(줌/배경). */
     get viewState(): ViewState | undefined {
         return this._viewState;
+    }
+
+    /** 테스트용: 마지막 성공 렌더가 보고한 경고 코드들. */
+    get warningCodes(): string[] {
+        return [...this._warningCodes];
     }
 
     /** 테스트용: 사용자가 지정한 렌더 크기. */
@@ -269,6 +276,7 @@ export class PreviewController implements vscode.Disposable {
                 this._elements = outcome.result.elements;
                 this._highlightedId = undefined; // 새 렌더의 좌표계: 강조를 다시 계산한다.
                 this._post({ type: 'image', png: outcome.result.png, width: outcome.result.width, height: outcome.result.height });
+                this._warningCodes = outcome.result.warnings.map((w) => w.code);
                 this._showSuccess(outcome.result.warnings);
                 const cursor = vscode.window.visibleTextEditors.find((e) => e.document === document)?.selection.active;
                 if (cursor) {
@@ -303,6 +311,16 @@ export class PreviewController implements vscode.Disposable {
             const diagnostic = new vscode.Diagnostic(range, `${error.code}: ${error.message}`, vscode.DiagnosticSeverity.Error);
             diagnostic.source = DIAGNOSTIC_SOURCE;
             this._diagnostics.set(document.uri, [diagnostic]);
+        } else if (isDotNetRuntimeMissing(error)) {
+            // 호스트가 .NET Desktop Runtime 부재로 시작하지 못했다: 원인과 설치 경로를 알려 준다(I-12).
+            const download = '.NET 설치 페이지 열기';
+            void vscode.window.showErrorMessage(DOTNET_RUNTIME_MISSING_MESSAGE, download).then((choice) => {
+                if (choice === download) {
+                    void vscode.env.openExternal(vscode.Uri.parse(DOTNET_DESKTOP_RUNTIME_URL));
+                } else {
+                    // 안내만 닫음.
+                }
+            });
         } else {
             void vscode.window.showErrorMessage(`WPF XAML Viewer: ${error.message} (자세한 내용은 출력 채널 확인)`);
         }

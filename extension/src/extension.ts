@@ -16,6 +16,7 @@ export interface ExtensionTestApi {
         highlightedId: string | undefined;
         viewState: { zoom: number; background: string } | undefined;
         size: { width?: number; height?: number };
+        warningCodes: string[];
     };
     /** 웹뷰가 보냈을 법한 메시지를 실제 수신 처리 함수로 넣는다(웹뷰 DOM 이벤트는 만들 수 없어서). */
     simulateWebviewMessage(raw: unknown): void;
@@ -23,6 +24,8 @@ export interface ExtensionTestApi {
     setView(message: { zoom?: number; background?: 'checker' | 'white' | 'dark'; fit?: boolean }): void;
     /** 호스트 exe를 찾았는지. */
     hostFound: boolean;
+    /** 사용 중인 호스트 exe 경로(못 찾았으면 undefined). 번들(bin/host) 사용 여부를 설치 스모크가 확인한다. */
+    hostPath: string | undefined;
     /** 현재 호스트 프로세스 id(없으면 undefined). */
     getHostPid(): number | undefined;
     /** 확장 로그 줄(최근 {@link TEST_LOG_BUFFER_MAX}개). */
@@ -59,10 +62,11 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         }
     };
     const api: ExtensionTestApi = {
-        getPreviewState: () => ({ renderCount: 0, lastImageSize: undefined, elementCount: 0, highlightedId: undefined, viewState: undefined, size: {} }),
+        getPreviewState: () => ({ renderCount: 0, lastImageSize: undefined, elementCount: 0, highlightedId: undefined, viewState: undefined, size: {}, warningCodes: [] }),
         simulateWebviewMessage: () => undefined,
         setView: () => undefined,
         hostFound: false,
+        hostPath: undefined,
         getHostPid: () => undefined,
         getLogLines: () => [...logLines],
     };
@@ -88,6 +92,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         vscode.commands.registerCommand(COMMAND_OPEN_PREVIEW, () => controller.open()),
     );
     api.hostFound = true;
+    api.hostPath = hostExe;
     api.getPreviewState = () => ({
         renderCount: controller.renderCount,
         lastImageSize: controller.lastImageSize,
@@ -95,6 +100,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         highlightedId: controller.highlightedId,
         viewState: controller.viewState,
         size: controller.size,
+        warningCodes: controller.warningCodes,
     });
     api.simulateWebviewMessage = (raw) => controller.simulateWebviewMessage(raw);
     api.setView = (message) => controller.setView(message);

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { HostClient, HostCrashedError, HostRequestError, HostTimeoutError, RenderResult } from '../../src/hostClient';
+import { isDotNetRuntimeMissing } from '../../src/runtimeCheck';
 import { LogLevel } from '../../src/logFormat';
 
 /**
@@ -184,6 +185,22 @@ describe('실제 호스트 + HostClient', function () {
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    });
+
+    it('I-12 .NET 런타임이 없는 환경(DOTNET_ROOT를 빈 폴더로): 호스트가 죽고 런타임 없음으로 식별된다', async () => {
+        const emptyRoot = path.join(logDir, 'no-dotnet');
+        fs.mkdirSync(emptyRoot, { recursive: true });
+        const logs: LogLine[] = [];
+        client = new HostClient({
+            command: HOST_EXE,
+            args: ['serve'],
+            // apphost는 DOTNET_ROOT_X64가 지정되면 그 위치만 찾는다(실측). 빈 폴더라 런타임을 찾지 못한다.
+            env: { DOTNET_ROOT_X64: emptyRoot, DOTNET_ROOT: emptyRoot, DOTNET_MULTILEVEL_LOOKUP: '0' },
+            log: (level, id, message) => logs.push({ level, id, message }),
+        });
+        await assert.rejects(client.request('ping'),
+            (e: unknown) => e instanceof HostCrashedError && isDotNetRuntimeMissing(e));
+        assert.ok(logs.some((l) => l.id === 'E012'));
     });
 
     it('I-07 로그: 시나리오 후 호스트 로그에 H001/H011/H012가 순서대로 남고 XAML 본문은 없다', async () => {
