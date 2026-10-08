@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { runTests } from '@vscode/test-electron';
+import { createUserProject } from '../support/userProject';
 
 /** 이 머신에 설치된 VS Code(있으면 다운로드를 피한다). XAMLVIEWER_VSCODE_EXE로 바꿀 수 있다. */
 const DEFAULT_VSCODE_EXE = 'C:\Program Files\Microsoft VS Code\Code.exe';
@@ -16,6 +17,9 @@ async function main(): Promise<void> {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'xamlviewer-ws-'));
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xamlviewer-ud-'));
     const extensionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xamlviewer-ext-'));
+    // I-10: 워크스페이스 안의 사용자 프로젝트(샘플 컨트롤 DLL 포함). 워크스페이스를 신뢰하는 실행에서 실제 컨트롤이 그려져야 한다.
+    const userProject = createUserProject(workspace, 'UserProj',
+        '<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:s="clr-namespace:SampleControls;assembly=SampleControls"><s:RedBox/></StackPanel>');
     const exe = process.env.XAMLVIEWER_VSCODE_EXE ?? (fs.existsSync(DEFAULT_VSCODE_EXE) ? DEFAULT_VSCODE_EXE : undefined);
 
     await runSuite('preview', {});
@@ -27,7 +31,7 @@ async function main(): Promise<void> {
         vscodeExecutablePath: exe,
         extensionDevelopmentPath,
         extensionTestsPath,
-        extensionTestsEnv: { XAMLVIEWER_TEST_WORKSPACE: workspace, XAMLVIEWER_TEST_SUITE: suite, ...env },
+        extensionTestsEnv: { XAMLVIEWER_TEST_WORKSPACE: workspace, XAMLVIEWER_TEST_USERPROJECT_XAML: userProject.xamlPath, XAMLVIEWER_TEST_SUITE: suite, ...env },
         launchArgs: [workspace, '--user-data-dir', userDataDir, '--extensions-dir', extensionsDir, '--disable-extensions', '--disable-workspace-trust'],
     });
     }

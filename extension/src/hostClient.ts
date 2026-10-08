@@ -63,6 +63,11 @@ export interface RenderParams {
     xaml: string;
     /** 문서의 파일 경로. 호스트가 병합 사전의 상대 경로를 풀 때 쓴다. */
     filePath?: string;
+    /**
+     * 프로젝트 빌드 DLL을 불러와 사용자 컨트롤을 실제로 그려도 되는가(Tier 1). 사용자 코드가 실행되므로 호출자는
+     * Workspace Trust(`vscode.workspace.isTrusted`)가 true일 때만 true로 보내야 한다. 생략/false면 호스트는 사용자 코드를 절대 로드하지 않는다.
+     */
+    allowProjectAssemblies?: boolean;
     width?: number;
     height?: number;
     dpi?: number;
@@ -83,6 +88,8 @@ export interface RenderResult {
     height: number;
     elements: unknown[];
     warnings: RenderWarning[];
+    /** 이번 렌더의 Tier 결정(0: 사용자 컨트롤은 자리표시자, 1: 프로젝트 DLL 로드)과 이유. */
+    project?: { tier: number; reason: string } | null;
 }
 
 /** renderLatest 결과: 더 새 요청에 밀려 폐기되었으면 `discarded: true`. */

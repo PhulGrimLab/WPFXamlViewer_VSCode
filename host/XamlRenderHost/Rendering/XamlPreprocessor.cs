@@ -28,6 +28,12 @@ public static class WarningCodes
     /// <summary>해석할 수 없는 사용자 타입을 자리표시자로 대체했다.</summary>
     public const string PlaceholderUsed = "PlaceholderUsed";
 
+    /// <summary>사용자 컨트롤(프로젝트 어셈블리)이 생성/초기화 중 예외를 던져 그 요소만 오류 자리표시자로 대체했다(H022).</summary>
+    public const string UserControlFailed = "UserControlFailed";
+
+    /// <summary>Tier 0으로 그렸다: 사용자 컨트롤이 자리표시자인 이유(미신뢰/산출물 없음/로드 실패)를 알린다(H023).</summary>
+    public const string ProjectTier0 = "ProjectTier0";
+
     /// <summary>병합 사전 파일을 찾지 못했거나 읽을 수 없어 빈 사전으로 대체했다.</summary>
     public const string DictionaryUnavailable = "DictionaryUnavailable";
 }
@@ -64,6 +70,10 @@ public static partial class XamlPreprocessor
     private const string PlaceholderBorderColor = "#E5484D";
     private const string PlaceholderFillColor = "#1AE5484D";
 
+    /// <summary>사용자 컨트롤이 예외를 던졌을 때의 오류 자리표시자 색(주황 계열, 해석 불가 자리표시자와 구분).</summary>
+    private const string ErrorPlaceholderColor = "#D97706";
+    private const string ErrorPlaceholderFillColor = "#1AD97706";
+
     /// <summary>자리표시자가 원본에서 물려받는 일반 속성(레이아웃 관련). 값에 마크업 확장({)이 없을 때만 복사한다.</summary>
     private static readonly HashSet<string> InheritedPlaceholderAttributes = new(StringComparer.Ordinal)
     {
@@ -79,9 +89,13 @@ public static partial class XamlPreprocessor
     /// <summary>XAML 타입 조회용 스키마 컨텍스트(스레드 안전하지 않으므로 호출마다 만든다).</summary>
     private sealed class Context
     {
-        public readonly XamlSchemaContext Schema = new();
+        /// <summary>타입 조회용 스키마. Tier 1이면 렌더러가 만든 참조 지정 컨텍스트를 받는다(렌더와 같은 어셈블리 집합으로 판단해야 하므로).</summary>
+        public XamlSchemaContext Schema { get; init; } = new();
         public readonly List<RenderWarning> Warnings = new();
         public readonly HashSet<string> VisitedDictionaries;
+
+        /// <summary>Tier 1에서 로드한 프로젝트 어셈블리 이름. `assembly=` 없는 clr-namespace는 이 어셈블리로 해석한다. Tier 0이면 null.</summary>
+        public string? ProjectAssemblyName { get; init; }
 
         public Context(HashSet<string> visited) { VisitedDictionaries = visited; }
     }
@@ -93,7 +107,7 @@ public static partial class XamlPreprocessor
     /// 전처리를 수행한다. 입력: XAML 원문, (선택) 문서 파일 경로(병합 사전의 상대 경로 해석용). 출력: 변환된 XAML과 경고 목록.
     /// 예외: 원문 XML이 올바르지 않으면 <see cref="XamlRenderException"/>(XmlMalformed).
     /// </summary>
-    public static PreprocessResult Process(string xaml, string? filePath)
+    public static PreprocessResult Process(string xaml, string? filePath, string? projectAssemblyName = null, XamlSchemaContext? schema = null)
     {
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrEmpty(filePath))
@@ -104,7 +118,7 @@ public static partial class XamlPreprocessor
         {
             // 파일 경로 없음: 순환 감지는 사전 파일부터 시작한다.
         }
-        var context = new Context(visited);
+        var context = new Context(visited) { ProjectAssemblyName = projectAssemblyName, Schema = schema ?? new XamlSchemaContext() };
         var processed = ProcessInternal(xaml, filePath, context, depth: 0);
         processed = InjectApplicationResources(processed, filePath, context);
         return new PreprocessResult(processed, context.Warnings);
@@ -187,7 +201,7 @@ public static partial class XamlPreprocessor
         }
         else
         {
-            var type = context.Schema.GetXamlType(new XamlTypeName(reader.NamespaceURI, reader.LocalName));
+            var type = context.Schema.GetXamlType(new XamlTypeName(WithProjectAssembly(reader.NamespaceURI, context), reader.LocalName));
             return type == null || type.IsUnknown;
         }
     }
@@ -210,6 +224,7 @@ public static partial class XamlPreprocessor
         {
             if (reader.Prefix == "xmlns" || reader.Name == "xmlns")
             {
+                AddProjectAssemblyToNamespace(reader, xaml, lineStarts, lineInfo, context, edits);
                 continue;
             }
             else
@@ -246,6 +261,34 @@ public static partial class XamlPreprocessor
         reader.MoveToElement();
     }
 
+    /// <summary>`assembly=` 없는 clr-namespace에 프로젝트 어셈블리 이름을 붙인 값을 돌려준다(해당 없으면 그대로).</summary>
+    private static string WithProjectAssembly(string xmlNamespace, Context context)
+    {
+        var needsAssembly = context.ProjectAssemblyName != null
+            && xmlNamespace.StartsWith(ClrNamespacePrefix, StringComparison.Ordinal)
+            && !xmlNamespace.Contains(";assembly=", StringComparison.OrdinalIgnoreCase);
+        return needsAssembly ? $"{xmlNamespace};assembly={context.ProjectAssemblyName}" : xmlNamespace;
+    }
+
+    /// <summary>
+    /// xmlns 선언의 값이 `assembly=` 없는 clr-namespace이고 프로젝트 어셈블리가 있으면, 닫는 따옴표 앞에 `;assembly=이름`을 끼워 넣는다.
+    /// 그래야 XamlReader가 "현재 프로젝트의 타입"을 로드된 어셈블리에서 찾는다(XamlReader.Parse에는 로컬 어셈블리 개념이 없다).
+    /// </summary>
+    private static void AddProjectAssemblyToNamespace(XmlReader reader, string xaml, List<int> lineStarts, IXmlLineInfo lineInfo, Context context, List<Edit> edits)
+    {
+        var rewritten = WithProjectAssembly(reader.Value, context);
+        if (!ReferenceEquals(rewritten, reader.Value) && rewritten != reader.Value)
+        {
+            var start = ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition);
+            var closingQuote = FindAttributeEnd(xaml, start) - 1;
+            edits.Add(new Edit(closingQuote, closingQuote, $";assembly={context.ProjectAssemblyName}"));
+        }
+        else
+        {
+            // 보정 불필요: 그대로 둔다.
+        }
+    }
+
     /// <summary>속성 이름이 해당 요소 타입의 이벤트(일반 이벤트 또는 `Owner.Event` 형태의 연결 이벤트)인지 확인한다.</summary>
     private static bool IsEventAttribute(XamlSchemaContext schema, string elementNamespace, string elementLocal, string attributeLocal)
     {
@@ -263,7 +306,7 @@ public static partial class XamlPreprocessor
     }
 
     /// <summary>해석 불가 요소를 대신할 Border+TextBlock 문자열을 만든다. 레이아웃 관련/연결 속성/x:Name/x:Key만 물려받는다.</summary>
-    private static string BuildPlaceholder(XmlReader reader, string xaml, List<int> lineStarts, IXmlLineInfo lineInfo)
+    private static string BuildPlaceholder(XmlReader reader, string xaml, List<int> lineStarts, IXmlLineInfo lineInfo, string? error = null)
     {
         var typeName = reader.Name;
         var inherited = new StringBuilder();
@@ -292,9 +335,13 @@ public static partial class XamlPreprocessor
             // 속성 없음.
         }
 
-        var label = System.Security.SecurityElement.Escape(typeName);
-        return $"<Border xmlns=\"{PresentationNamespace}\" BorderBrush=\"{PlaceholderBorderColor}\" BorderThickness=\"1\" Background=\"{PlaceholderFillColor}\" MinWidth=\"40\" MinHeight=\"22\"{inherited}>"
-            + $"<TextBlock Text=\"{label}\" Foreground=\"{PlaceholderBorderColor}\" FontSize=\"11\" Margin=\"4,2\" TextTrimming=\"CharacterEllipsis\"/></Border>";
+        // 오류 자리표시자(사용자 컨트롤 생성 예외)는 두 번째 줄에 예외 요약을 보여 준다. 줄바꿈은 문자 참조로 넣어 문서 줄 수를 바꾸지 않는다.
+        var label = System.Security.SecurityElement.Escape(error == null ? typeName : $"{typeName}\n{error}")!.Replace("\n", "&#10;");
+        var color = error == null ? PlaceholderBorderColor : ErrorPlaceholderColor;
+        var fill = error == null ? PlaceholderFillColor : ErrorPlaceholderFillColor;
+        var trimming = error == null ? "TextTrimming=\"CharacterEllipsis\"" : "TextWrapping=\"Wrap\"";
+        return $"<Border xmlns=\"{PresentationNamespace}\" BorderBrush=\"{color}\" BorderThickness=\"1\" Background=\"{fill}\" MinWidth=\"40\" MinHeight=\"22\"{inherited}>"
+            + $"<TextBlock Text=\"{label}\" Foreground=\"{color}\" FontSize=\"11\" Margin=\"4,2\" {trimming}/></Border>";
     }
 
     /// <summary>

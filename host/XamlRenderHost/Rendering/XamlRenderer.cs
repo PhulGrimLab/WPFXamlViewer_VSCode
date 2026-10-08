@@ -9,11 +9,11 @@ using System.Xml.Linq;
 
 namespace XamlRenderHost.Rendering;
 
-/// <summary>렌더 요청. FilePath는 문서의 파일 경로로, 병합 사전의 상대 경로를 풀 때만 쓴다(없어도 렌더된다). Width/Height는 "요청 크기"(우선순위 3번)이며 루트의 명시 크기와 d:Design* 가 있으면 무시된다.</summary>
-public sealed record RenderRequest(string Xaml, double? Width = null, double? Height = null, double Dpi = XamlRenderer.DefaultDpi, string? FilePath = null);
+/// <summary>렌더 요청. AllowProjectAssemblies는 호출자(확장)가 Workspace Trust로 판단한 "프로젝트 DLL 로드 허용"이다(false면 사용자 코드를 실행하지 않는다). FilePath는 문서의 파일 경로로, 병합 사전의 상대 경로를 풀 때만 쓴다(없어도 렌더된다). Width/Height는 "요청 크기"(우선순위 3번)이며 루트의 명시 크기와 d:Design* 가 있으면 무시된다.</summary>
+public sealed record RenderRequest(string Xaml, double? Width = null, double? Height = null, double Dpi = XamlRenderer.DefaultDpi, string? FilePath = null, bool AllowProjectAssemblies = false);
 
 /// <summary>렌더 결과. Png는 투명 배경 PNG 바이트, 크기는 픽셀 단위.</summary>
-public sealed record RenderResult(byte[] Png, int PixelWidth, int PixelHeight, IReadOnlyList<RenderWarning>? Warnings = null);
+public sealed record RenderResult(byte[] Png, int PixelWidth, int PixelHeight, IReadOnlyList<RenderWarning>? Warnings = null, ProjectTierInfo? Project = null);
 
 /// <summary>
 /// XAML 문자열을 WPF로 실제 렌더링해 PNG로 돌려준다(doc/01 3절의 Renderer).
@@ -26,6 +26,31 @@ public sealed record RenderResult(byte[] Png, int PixelWidth, int PixelHeight, I
 /// </summary>
 public static class XamlRenderer
 {
+    /// <summary>
+    /// 디자인 모드 표시(doc/01 3.3 규칙 4, M4B B.3): 사용자 코드가 `DesignerProperties.GetIsInDesignMode`로 분기할 수 있게
+    /// 기본값을 true로 덮어쓴다(Visual Studio 디자이너와 같은 관례). 프로세스에서 한 번만 가능하므로 정적 초기화로 둔다.
+    /// 덮어쓰기가 이미 되어 있으면(예: 같은 프로세스의 다른 초기화) 무시한다.
+    /// </summary>
+    private static readonly bool DesignModeEnabled = EnableDesignMode();
+
+    private static bool EnableDesignMode()
+    {
+        try
+        {
+            System.ComponentModel.DesignerProperties.IsInDesignModeProperty.OverrideMetadata(
+                typeof(DependencyObject), new FrameworkPropertyMetadata(true));
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false; // 이미 덮어써져 있음.
+        }
+        catch (InvalidOperationException)
+        {
+            return false; // 속성이 이미 사용되어 메타데이터가 확정됨.
+        }
+    }
+
     /// <summary>기본 DPI. 골든 이미지는 이 값으로 만든다.</summary>
     public const double DefaultDpi = 96.0;
 
@@ -50,6 +75,7 @@ public static class XamlRenderer
     /// </summary>
     public static RenderResult Render(RenderRequest request)
     {
+        _ = DesignModeEnabled; // 정적 초기화를 확실히 수행한다(어떤 WPF 객체도 만들기 전).
         if (string.IsNullOrWhiteSpace(request.Xaml))
         {
             throw new XamlRenderException(RenderErrorCodes.EmptyInput, "XAML 입력이 비어 있습니다.");
@@ -59,15 +85,27 @@ public static class XamlRenderer
             // 정상 입력: 계속 진행.
         }
 
-        var preprocessed = XamlPreprocessor.Process(request.Xaml, request.FilePath);
-        var root = ParseRoot(preprocessed.Xaml);
-        var (designWidth, designHeight) = ReadDesignSize(preprocessed.Xaml);
+        var tier = ProjectTier.Resolve(request.AllowProjectAssemblies, request.FilePath);
+        var schema = ProjectTier.CreateSchemaContext(tier);
+        var preprocessed = XamlPreprocessor.Process(request.Xaml, request.FilePath, tier.Tier == 1 ? tier.AssemblyName : null, schema);
+        var warnings = new List<RenderWarning>(preprocessed.Warnings);
+        var (root, finalXaml) = ParseWithUserFailureRecovery(preprocessed.Xaml, schema, warnings);
+        if (tier.Tier == 0 && warnings.Any(w => w.Code == WarningCodes.PlaceholderUsed))
+        {
+            // 자리표시자가 생겼고 그 이유가 Tier 0라면 사용자에게 이유를 알린다(미신뢰/산출물 없음 등).
+            warnings.Add(new RenderWarning(WarningCodes.ProjectTier0, ProjectTier.DescribeTier0(tier), null, null));
+        }
+        else
+        {
+            // 알릴 필요 없음.
+        }
+        var (designWidth, designHeight) = ReadDesignSize(finalXaml);
         var width = ResolveDimension(root.Width, designWidth, request.Width);
         var height = ResolveDimension(root.Height, designHeight, request.Height);
 
         try
         {
-            return RenderToPng(root, width, height, request.Dpi) with { Warnings = preprocessed.Warnings };
+            return RenderToPng(root, width, height, request.Dpi) with { Warnings = warnings, Project = tier };
         }
         catch (XamlRenderException)
         {
@@ -79,13 +117,85 @@ public static class XamlRenderer
         }
     }
 
+    /// <summary>한 렌더에서 사용자 컨트롤 예외로 대체를 시도하는 최대 횟수(무한 반복 방지).</summary>
+    private const int MaxUserFailureReplacements = 20;
+
+    /// <summary>오류 자리표시자에 싣는 예외 요약의 최대 길이.</summary>
+    private const int MaxErrorSummaryLength = 120;
+
+    /// <summary>
+    /// 파싱하되, 사용자 코드(프로젝트 어셈블리)가 던진 예외로 실패하면 그 요소만 오류 자리표시자로 바꾸고 다시 파싱한다(M4B B.3).
+    /// 사용자 코드가 던진 것인지는 예외의 스택에 기본 컨텍스트가 아닌(= 사용자 컨텍스트) 어셈블리 프레임이 있는지로 판단한다.
+    /// 그 외 실패(문법/값 오류 등)는 그대로 던진다. 반환: 루트와 최종 XAML(디자인 크기 읽기용).
+    /// </summary>
+    private static (FrameworkElement Root, string Xaml) ParseWithUserFailureRecovery(string xaml, System.Xaml.XamlSchemaContext? schema, List<RenderWarning> warnings)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                return (ParseRoot(xaml, schema), xaml);
+            }
+            catch (XamlRenderException ex) when (attempt < MaxUserFailureReplacements
+                && ex.Code == RenderErrorCodes.XamlParse && ex.Line.HasValue && ex.Column.HasValue
+                && ex.InnerException != null && ThrownByUserCode(ex.InnerException))
+            {
+                var summary = Summarize(ex.InnerException);
+                var replacement = XamlPreprocessor.ReplaceFailedUserElement(xaml, ex.Line.Value, ex.Column.Value, summary);
+                if (replacement == null)
+                {
+                    throw; // 사용자 타입 요소를 특정하지 못함: 원래 오류를 보고한다.
+                }
+                else
+                {
+                    xaml = replacement.Xaml;
+                    warnings.Add(new RenderWarning(WarningCodes.UserControlFailed, $"{replacement.TypeName}: {summary}", replacement.Line, replacement.Column));
+                }
+            }
+        }
+    }
+
+    /// <summary>예외(와 내부 예외들)의 스택에 사용자 컨텍스트에서 로드한 어셈블리의 프레임이 있는가.</summary>
+    private static bool ThrownByUserCode(Exception exception)
+    {
+        for (var current = exception; current != null; current = current.InnerException)
+        {
+            foreach (var frame in new System.Diagnostics.StackTrace(current).GetFrames())
+            {
+                var assembly = frame.GetMethod()?.DeclaringType?.Assembly;
+                var context = assembly == null ? null : System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(assembly);
+                if (context != null && context != System.Runtime.Loader.AssemblyLoadContext.Default)
+                {
+                    return true;
+                }
+                else
+                {
+                    // 프레임워크/호스트 코드.
+                }
+            }
+        }
+        return false;
+    }
+
+    /// <summary>가장 안쪽 예외의 "형식: 메시지"를 한 줄 요약(길이 제한)으로 만든다.</summary>
+    private static string Summarize(Exception exception)
+    {
+        var innermost = exception;
+        while (innermost.InnerException != null)
+        {
+            innermost = innermost.InnerException;
+        }
+        var text = $"{innermost.GetType().Name}: {innermost.Message}".Replace("\r", " ").Replace("\n", " ");
+        return text.Length <= MaxErrorSummaryLength ? text : text[..MaxErrorSummaryLength] + "…";
+    }
+
     /// <summary>XamlReader로 파싱하고 FrameworkElement 루트인지 확인한다. 파싱 오류는 코드/줄/열로 변환한다.</summary>
-    private static FrameworkElement ParseRoot(string xaml)
+    private static FrameworkElement ParseRoot(string xaml, System.Xaml.XamlSchemaContext? schema)
     {
         object parsed;
         try
         {
-            parsed = XamlReader.Parse(xaml);
+            parsed = ParseObject(xaml, schema);
         }
         catch (XamlParseException ex)
         {
@@ -156,6 +266,24 @@ public static class XamlRenderer
         else
         {
             // 로컬 값 없음: 기본값 유지.
+        }
+    }
+
+    /// <summary>
+    /// schema가 없으면 WPF 기본 경로(XamlReader.Parse), 있으면(Tier 1) 그 스키마 컨텍스트로 XamlXmlReader를 만들어 로드한다.
+    /// 후자는 줄/열 정보를 켜서 오류가 같은 위치 정보를 갖게 한다.
+    /// </summary>
+    private static object ParseObject(string xaml, System.Xaml.XamlSchemaContext? schema)
+    {
+        if (schema == null)
+        {
+            return XamlReader.Parse(xaml);
+        }
+        else
+        {
+            using var stringReader = new StringReader(xaml);
+            using var xamlReader = new System.Xaml.XamlXmlReader(stringReader, schema, new System.Xaml.XamlXmlReaderSettings { ProvideLineInfo = true });
+            return XamlReader.Load(xamlReader);
         }
     }
 

@@ -49,7 +49,8 @@ public class LoggingTests
                 $"<Grid {Ns} Width=\"10\" Height=\"10\"/>", $"<Grid {Ns}><NoSuch/></Grid>");
             var ids = log.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Select(l => l.Split(' ')[2]).ToList();
-            CollectionAssert.AreEqual(new[] { "H001", "H011", "H012", "H002" }, ids, log);
+            // H023(Tier 결정)은 세션의 첫 렌더 뒤에 한 번만 남는다(결정이 바뀔 때만 다시 남김, M4B).
+            CollectionAssert.AreEqual(new[] { "H001", "H011", "H023", "H012", "H002" }, ids, log);
             StringAssert.Contains(log, "reason=shutdown");
             StringAssert.Contains(log, "code=XamlParse");
             StringAssert.Contains(log, "size=10x10");

@@ -111,7 +111,11 @@ public static partial class XamlPreprocessor
     /// </summary>
     private static string? BuildApplicationDictionary(string appPath, Context context)
     {
-        var appContext = new Context(new HashSet<string>(context.VisitedDictionaries, StringComparer.OrdinalIgnoreCase) { appPath });
+        var appContext = new Context(new HashSet<string>(context.VisitedDictionaries, StringComparer.OrdinalIgnoreCase) { appPath })
+        {
+            ProjectAssemblyName = context.ProjectAssemblyName,
+            Schema = context.Schema,
+        };
         XDocument document;
         try
         {

@@ -18,6 +18,12 @@
     <Page Remove="Fixtures\**\*.xaml" />
   </ItemGroup>
 
+  <!-- Tier 1 테스트용 사용자 프로젝트 소스는 테스트가 별도로 빌드한다. 이 프로젝트에 같이 컴파일되면 안 된다. -->
+  <ItemGroup>
+    <Compile Remove="Fixtures\projects\**" />
+    <None Remove="Fixtures\projects\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="MSTest" Version="4.0.2" />
   </ItemGroup>

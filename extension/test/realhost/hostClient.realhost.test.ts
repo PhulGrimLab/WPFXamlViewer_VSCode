@@ -196,7 +196,8 @@ describe('실제 호스트 + HostClient', function () {
 
         const log = fs.readFileSync(path.join(logDir, 'host.log'), 'utf8');
         const ids = log.split('\n').filter((l) => l.trim()).map((l) => l.split(' ')[2]).filter((id) => id !== 'H010');
-        assert.deepStrictEqual(ids, ['H001', 'H011', 'H012', 'H002'], log);
+        // H023(Tier 결정)은 세션의 첫 렌더 뒤에 한 번만 남는다(M4B).
+        assert.deepStrictEqual(ids, ['H001', 'H011', 'H023', 'H012', 'H002'], log);
         assert.ok(!log.includes(secret), 'XAML 본문이 로그에 남았다');
 
         // 확장 쪽 로그에도 시작 기록(E010)이 있다.

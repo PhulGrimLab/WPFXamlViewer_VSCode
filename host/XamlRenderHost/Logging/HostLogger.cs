@@ -29,6 +29,18 @@ public static class LogIds
     public const string RenderFailed = "H012";
     public const string PlaceholderUsed = "H013";
 
+    /// <summary>사용자 어셈블리 로드(Tier 1) 성공/재로드.</summary>
+    public const string UserAssemblyLoaded = "H020";
+
+    /// <summary>사용자 어셈블리 로드 실패/없음.</summary>
+    public const string UserAssemblyUnavailable = "H021";
+
+    /// <summary>사용자 컨트롤 생성 예외(오류 자리표시자로 대체).</summary>
+    public const string UserControlFailed = "H022";
+
+    /// <summary>Tier 결정(0/1)과 이유. 결정이 바뀔 때만 남긴다.</summary>
+    public const string TierDecided = "H023";
+
     /// <summary>큐가 가득 차 로그를 버렸음을 알리는 내부 로그(doc/01 5절 정책 보강).</summary>
     public const string LogsDropped = "H090";
 }

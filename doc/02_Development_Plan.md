@@ -155,6 +155,24 @@ WPFXamlViewer_VSCode/
 | B.6 | 결함 주입: 정적 생성자 무한 루프, 크래시(StackOverflow), 느린 생성자 | 타임아웃 → kill → 재시작, VS Code 무영향(T4) |
 | B.7 | 최신 WPF 기능 픽스처(.NET 9+ `ThemeMode`/Fluent) | 골든 일치(T2) |
 
+**M4B 결과 (2026-10-08)** — B.1~B.4, B.6, B.7 완료 / **B.5(프로젝트별 호스트 프로세스 분리, 유휴 종료)는 미구현**
+- 구현(호스트): `ProjectLocator`(가장 가까운 .csproj → `bin/**/<AssemblyName>.dll` 중 수정 시각 최신, `<AssemblyName>` 속성 반영), `UserAssemblies`(수집 가능 `AssemblyLoadContext` + 산출물 폴더 **임시 복사본 로드**로 원본 비잠금, 수정 시각/크기 변경 시 Unload 후 재로드, deps.json 의존성 + 참조 어셈블리 선로드), `ProjectTier`(신뢰/산출물/로드 결과 → Tier 0/1과 이유), 사용자 컨트롤 예외 → 해당 요소만 **오류 자리표시자(주황)** + `UserControlFailed` 경고 후 재파싱(최대 20회), `DesignerProperties.IsInDesignMode` 기본값 true, `assembly=` 없는 `clr-namespace`는 프로젝트 어셈블리로 보정.
+- 구현(확장): `render` 파라미터 `allowProjectAssemblies = vscode.workspace.isTrusted`, 폴더를 신뢰하는 순간(`onDidGrantWorkspaceTrust`) 자동 재렌더. 호스트는 이 플래그가 false면 사용자 DLL을 **절대 로드하지 않는다**(테스트로 고정: 미신뢰에서 던지는 생성자가 실행되지 않음).
+- 프로토콜: 응답에 `project:{tier,reason}`, 경고 코드 `UserControlFailed`, `ProjectTier0`(자리표시자가 생겼고 이유가 Tier 0일 때만: Untrusted/NoFilePath/NoProject/NoArtifact("먼저 dotnet build")/LoadFailed). 로그 H020(로드/재로드, 경로·ms) / H021(로드 실패) / H022(생성자 예외, 최대 5개) / H023(Tier 결정, **세션 첫 렌더와 결정이 바뀔 때만** — 그래서 기존 로그 순서 테스트가 `H001 H011 H023 H012 H002`로 바뀜).
+- 검증: 호스트 100개(신규: H-T01~T09 + 골든 R15/R16 Fluent Light/Dark를 눈으로 확인), 실제 호스트 + HostClient 13개(신규 4: 신뢰/미신뢰/생성자 예외/B.6 무한 대기 생성자 → 타임아웃 → kill → 새 호스트 정상), 실제 VS Code 통합 6개(신규 I-10: 신뢰된 워크스페이스에서 프로젝트 DLL의 `RedBox`가 40x20으로 그려짐). 샘플 사용자 프로젝트 `Fixtures/projects/SampleControls`는 테스트가 `dotnet build`로 빌드한다(변형 B = 폭 80으로 재로드 검증).
+- **실측 함정(테스트로 고정)**:
+  1. 같은 어셈블리 이름이 여러 번(여러 프로젝트/DLL 교체 전후) 로드되면, WPF의 **공유 스키마 컨텍스트는 이름으로 찾고 결과를 캐시**해서 엉뚱한(또는 옛) 복사본의 타입을 쓴다 — 병렬 테스트에서 "알 수 없는 형식"으로 드러났고 DLL 재로드도 막는다. 해결: Tier 1에서는 **렌더마다 새 `XamlSchemaContext`를 만들고 참조 어셈블리 목록을 명시**(기본 컨텍스트 어셈블리 + 이번에 로드한 사용자 어셈블리와 그 컨텍스트의 의존 어셈블리)한 뒤 `XamlReader.Load(XamlXmlReader)`로 파싱한다. Tier 0은 기존 `XamlReader.Parse` 경로 그대로다(골든 불변).
+  2. 기존 로그 ID 규약상 H023이 첫 렌더에 추가돼 로그 순서 테스트 두 곳(호스트 L01, 확장 I-07)을 갱신했다.
+- **미검증/제한 (숨기지 않고 기록)**:
+  1. **보안 모델은 Workspace Trust 하나뿐이다.** 신뢰하면 사용자 코드(생성자/정적 생성자)가 호스트 프로세스 안에서 사용자 권한으로 그대로 실행된다. 샌드박스는 없다.
+  2. **B.5 미구현**: 지금은 호스트 프로세스 1개가 모든 프로젝트를 ALC로 분리해 처리한다. 사용자 코드가 멈추거나 죽으면 호스트가 kill되고 다음 요청에서 재시작되므로(B.6 검증) 확장 영향은 없지만, 다른 프로젝트의 로드 상태도 같이 사라진다. 프로세스 분리/유휴 종료는 필요해지면 확장 쪽 `HostClient` 풀로 구현한다.
+  3. **Unload된 ALC가 실제로 GC되어 메모리가 해제되는지는 검증하지 않았다**(정적 필드/WPF 내부 캐시가 참조를 잡으면 수집되지 않을 수 있다). DLL을 계속 다시 빌드하며 오래 쓰는 시나리오의 메모리 증가는 미측정.
+  4. 사용자 코드가 무한 루프이면 그 요청은 기본 10초 타임아웃까지 호스트를 막는다(그 동안 같은 호스트의 다른 요청도 대기). `Hanging` 생성자로 kill/재시작은 검증했지만 StackOverflow/네이티브 크래시는 시험하지 않았다(호스트 크래시 복구는 `debug.crash`로 검증됨).
+  5. 생성자 예외 판별은 "예외 스택에 사용자 컨텍스트 어셈블리의 프레임이 있다"는 휴리스틱이다. 사용자 코드를 거치지 않은 값 오류는 그대로 XamlParse 오류로 보고되고, 비동기/지연 실행되는 사용자 코드의 예외(로드 이벤트 등)는 다루지 않는다.
+  6. 신뢰되지 않은 워크스페이스의 **통합(VS Code) 테스트는 없다**(테스트 러너가 `--disable-workspace-trust`로 신뢰 상태). 미신뢰 경로는 실제 호스트 테스트로 검증했고 `vscode.workspace.isTrusted` 전달 자체는 코드 리뷰 수준이다.
+  7. 사용자 프로젝트의 TFM이 net8/9여도 호스트(net10)에 로드된다(상위 호환 가정). net10 이전 전용 API/런타임 동작 차이, 32비트/AnyCPU 외 산출물, 서명/강한 이름 충돌은 시험하지 않았다. `Microsoft.NET.Sdk.WindowsDesktop` 등 구형 SDK 프로젝트의 `bin` 구조도 샘플 한 가지만 확인했다.
+  8. Tier 1에서 `XamlReader.Load(XamlXmlReader)` 경로가 `Parse`와 완전히 같은 결과인지는 샘플 시나리오(스타일/템플릿 일부, App.xaml 리소스, 루트 속성 이동, 줄 번호)로만 확인했다.
+
 ### M5. 상호작용
 | # | 단계 | 검증 |
 |---|---|---|

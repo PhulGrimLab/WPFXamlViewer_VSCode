@@ -66,6 +66,25 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         assert.ok(api.getPreviewState().renderCount > before);
     });
 
+    it('I-10 신뢰된 워크스페이스: 프로젝트 DLL의 사용자 컨트롤이 실제로 그려진다(Tier 1)', async () => {
+        const xamlPath = process.env.XAMLVIEWER_TEST_USERPROJECT_XAML as string;
+        const doc = await vscode.workspace.openTextDocument(xamlPath);
+        assert.ok(vscode.workspace.isTrusted, '이 실행은 --disable-workspace-trust 이므로 신뢰 상태여야 한다');
+        await vscode.window.showTextDocument(doc);
+
+        const before = api.getPreviewState().renderCount;
+        await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
+        await waitUntil(() => api.getPreviewState().renderCount > before);
+        // RedBox는 폭 40 x 높이 20. 자리표시자였다면 텍스트 폭에 따라 훨씬 커진다.
+        await waitUntil(() => api.getPreviewState().lastImageSize?.width === 40);
+        assert.deepStrictEqual(api.getPreviewState().lastImageSize, { width: 40, height: 20 });
+        assert.ok(api.getLogLines().some((l) => l.includes('E010')), '호스트가 시작되어야 한다');
+
+        // 다음 테스트를 위해 원래 문서를 다시 활성화한다.
+        // (미리보기 탭이 아닌 일반 편집기는 다른 문서를 열면 교체되어 기존 TextEditor가 닫히므로 새로 받아 둔다.)
+        editor = await vscode.window.showTextDocument(editor.document);
+    });
+
     it('I-04 호스트 강제 종료 → 다음 편집에서 자동 복구(E012 후 E010)', async () => {
         const oldPid = api.getHostPid();
         assert.ok(oldPid, '호스트가 실행 중이어야 함');

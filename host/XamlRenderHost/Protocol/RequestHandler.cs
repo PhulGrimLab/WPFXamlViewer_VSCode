@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using XamlRenderHost.Logging;
+using XamlRenderHost.Projects;
 using XamlRenderHost.Rendering;
 
 namespace XamlRenderHost.Protocol;
@@ -120,12 +121,14 @@ public sealed class RequestHandler
     {
         string xaml;
         string? filePath;
+        bool allowProjectAssemblies;
         double? width, height;
         double dpi;
         try
         {
             xaml = p?["xaml"]?.GetValue<string>() ?? throw new JsonException("params.xaml(문자열)이 필요합니다.");
             filePath = p["filePath"]?.GetValue<string>();
+            allowProjectAssemblies = p["allowProjectAssemblies"]?.GetValue<bool>() ?? false;
             width = p["width"]?.GetValue<double>();
             height = p["height"]?.GetValue<double>();
             dpi = p["dpi"]?.GetValue<double>() ?? XamlRenderer.DefaultDpi;
@@ -138,11 +141,12 @@ public sealed class RequestHandler
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var result = XamlRenderer.Render(new RenderRequest(xaml, width, height, dpi, filePath));
+            var result = XamlRenderer.Render(new RenderRequest(xaml, width, height, dpi, filePath, allowProjectAssemblies));
             var warnings = result.Warnings ?? Array.Empty<RenderWarning>();
             _logger.Log(LogLevel.Info, LogIds.RenderSucceeded,
                 $"id={id?.ToJsonString() ?? "null"} ms={stopwatch.ElapsedMilliseconds} size={result.PixelWidth}x{result.PixelHeight} elements=0 warnings={warnings.Count}");
             LogPlaceholders(id, warnings);
+            LogProjectTier(id, result.Project, warnings);
             return Ok(id, new JsonObject
             {
                 ["png"] = Convert.ToBase64String(result.Png),
@@ -151,6 +155,11 @@ public sealed class RequestHandler
                 // 요소 매핑(HitMap)은 M5에서 채운다. 응답 형식은 지금부터 고정한다.
                 ["elements"] = new JsonArray(),
                 ["warnings"] = ToJson(warnings),
+                ["project"] = result.Project == null ? null : new JsonObject
+                {
+                    ["tier"] = result.Project.Tier,
+                    ["reason"] = result.Project.Reason,
+                },
             });
         }
         catch (XamlRenderException ex)
@@ -170,6 +179,52 @@ public sealed class RequestHandler
         foreach (var w in warnings.Where(w => w.Code == WarningCodes.PlaceholderUsed).Take(MaxPlaceholderLogEntries))
         {
             _logger.Log(LogLevel.Warn, LogIds.PlaceholderUsed, $"id={id?.ToJsonString() ?? "null"} {w.Message}");
+        }
+    }
+
+    /// <summary>마지막으로 로그에 남긴 Tier 결정("tier/reason"). 같은 결정을 매 렌더마다 반복해 남기지 않기 위한 상태(STA 스레드에서만 접근).</summary>
+    private string _lastTierLogged = string.Empty;
+
+    /// <summary>
+    /// Tier 관련 로그: DLL을 (다시) 로드했으면 H020, 로드 실패면 H021, 결정(tier/이유)이 바뀌었으면 H023, 사용자 컨트롤 예외마다 H022.
+    /// 경로는 남기되 XAML 본문/예외 메시지 전문은 남기지 않는다(메시지는 길이가 제한된 요약만).
+    /// </summary>
+    private void LogProjectTier(JsonNode? id, ProjectTierInfo? tier, IReadOnlyList<RenderWarning> warnings)
+    {
+        if (tier != null)
+        {
+            if (tier.Reloaded)
+            {
+                _logger.Log(LogLevel.Info, LogIds.UserAssemblyLoaded, $"assembly={tier.AssemblyName} path={tier.AssemblyPath} ms={tier.LoadMs}");
+            }
+            else if (tier.Reason == ProjectTierReasons.LoadFailed)
+            {
+                _logger.Log(LogLevel.Warn, LogIds.UserAssemblyUnavailable, $"assembly={tier.AssemblyName} reason={tier.Detail}");
+            }
+            else
+            {
+                // 이미 로드되어 있음 / Tier 0 사유는 H023로 충분.
+            }
+
+            var decision = $"{tier.Tier}/{tier.Reason}";
+            if (decision != _lastTierLogged)
+            {
+                _lastTierLogged = decision;
+                _logger.Log(LogLevel.Info, LogIds.TierDecided, $"tier={tier.Tier} reason={tier.Reason}");
+            }
+            else
+            {
+                // 결정이 그대로: 반복 기록하지 않는다.
+            }
+        }
+        else
+        {
+            // Tier 정보 없음(호출 경로상 발생하지 않음).
+        }
+
+        foreach (var w in warnings.Where(w => w.Code == WarningCodes.UserControlFailed).Take(MaxPlaceholderLogEntries))
+        {
+            _logger.Log(LogLevel.Warn, LogIds.UserControlFailed, $"id={id?.ToJsonString() ?? "null"} {w.Message}");
         }
     }
 

@@ -42,6 +42,10 @@ export class PreviewController implements vscode.Disposable {
                     // 미리보기 대상이 아닌 문서의 편집은 무시한다.
                 }
             }),
+            vscode.workspace.onDidGrantWorkspaceTrust(() => {
+                // 폴더를 신뢰하는 순간 사용자 컨트롤을 실제로 그리도록 다시 렌더한다.
+                this._renderNow();
+            }),
             vscode.window.onDidChangeActiveTextEditor((editor) => {
                 if (this._panel && editor && this._isXaml(editor.document) && editor.document !== this._document) {
                     this._document = editor.document;
@@ -126,7 +130,12 @@ export class PreviewController implements vscode.Disposable {
 
         this._setStatus('$(sync~spin) XAML 렌더 중', undefined);
         this._post({ type: 'busy' });
-        this._client.renderLatest({ xaml: document.getText(), filePath: document.uri.scheme === 'file' ? document.uri.fsPath : undefined }).then(
+        this._client.renderLatest({
+            xaml: document.getText(),
+            filePath: document.uri.scheme === 'file' ? document.uri.fsPath : undefined,
+            // 사용자 코드를 실행하는 Tier 1은 신뢰된 워크스페이스에서만 허용한다(doc/01 3.3 규칙 1).
+            allowProjectAssemblies: vscode.workspace.isTrusted,
+        }).then(
             (outcome) => {
                 if (outcome.discarded) {
                     return; // 더 새 요청이 처리 중이므로 상태는 그 요청이 갱신한다.
