@@ -49,6 +49,8 @@ gh release create v<버전> `
 ```
 `--draft`로 먼저 올리고 웹에서 확인한 뒤 게시한다.
 
+> 저장소는 **공개(public)** 상태다(2026-10-10 확인). Release는 누구나 볼 수 있다. 릴리스 본문 초안: [release-notes/v0.1.0.md](./release-notes/v0.1.0.md) (Pre-release, 서명 없음/사용자 코드 실행/미검증 항목 명시).
+
 ## 3. 사용자에게 안내할 설치 방법 (릴리스 본문에 붙인다)
 1. 요구 사항: Windows 10/11 x64, **.NET 10 Desktop Runtime**(없으면 확장이 안내), VS Code 1.90 이상. Visual Studio는 불필요.
 2. 릴리스에서 `.vsix`와 `SHA256SUMS.txt`를 내려받는다.
