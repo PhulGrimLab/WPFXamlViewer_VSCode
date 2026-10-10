@@ -41,6 +41,14 @@ $vsixPath = Join-Path $Artifacts ("{0}-{1}.vsix" -f $package.name, $package.vers
 if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
 New-Item -ItemType Directory -Force $Stage | Out-Null
 
+# 확장 의존성(개발 도구 포함)이 없으면 컴파일/패키징이 "Cannot find module" 로 실패한다(새 PC/새 클론에서 흔함). 먼저 설치한다.
+# 컴파일은 테스트 코드까지 포함하므로 @vscode/test-electron, vsce 가 모두 있어야 한다.
+$needInstall = -not (Test-Path (Join-Path $ExtensionDir "node_modules\@vscode\test-electron")) `
+    -or -not (Test-Path (Join-Path $ExtensionDir "node_modules\.bin\vsce.cmd"))
+if ($needInstall) {
+    Invoke-Native "확장 의존성 설치 (npm ci)" { Push-Location $ExtensionDir; try { & npm ci } finally { Pop-Location } }
+}
+
 if (-not $SkipCompile) {
     Invoke-Native "확장 컴파일" { Push-Location $ExtensionDir; try { & npm run compile } finally { Pop-Location } }
 }
