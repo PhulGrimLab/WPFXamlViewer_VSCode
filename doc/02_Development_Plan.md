@@ -218,6 +218,11 @@ WPFXamlViewer_VSCode/
 - **하지 않은 것(의도적)**: GitHub Release/태그 생성(외부 공개 행위 — 사용자 확인 필요), Marketplace 게시(게시자 계정/PAT 필요, 되돌리기 어려움), 코드 서명(인증서 없음). 이 PC에는 `gh`가 설치되어 있지 않다(doc/06에 웹 UI 방법과 gh 방법 모두 기록).
 - **미검증/제한**: ① 깨끗한 PC 검증(doc/05)이 여전히 미실행이라 "처음 설치한 사람이 겪는 흐름"은 사람 눈으로 확인된 적이 없다 ② 서명되지 않은 exe/vsix는 SmartScreen/백신 경고 가능 ③ Marketplace의 이름 중복/게시자 계정 존재 여부는 확인하지 않았다 ④ 릴리스 본문/설치 안내는 문서로만 존재하며 실제 릴리스 페이지에서 시험하지 않았다.
 
+**"어느 PC에서든 소스에서 .vsix 빌드" 결과 (2026-10-10, 사용자 요구)** — 다른 PC에서 `npm run package`가 `Cannot find module '@vscode/test-electron'`으로 실패한 것이 계기. 원인: 패키징이 테스트 코드까지 컴파일해서 개발 도구가 빠진 새 클론에서 실패.
+- **고친 것**: ① 패키징 전용 `extension/tsconfig.build.json`(src만 컴파일, `npm run compile:build`) — 테스트 도구 없이도 빌드 ② `build_vsix.ps1`이 시작할 때 **전제 조건을 한 번에 점검**(Windows, .NET SDK 10+, Node 20+, npm)하고 부족한 항목을 설치 명령과 함께 모두 알려 주고 종료 코드 1로 중단, 의존성(`vsce`/`tsc`)이 없으면 `npm ci` 자동 실행, 스테이징 폴더 삭제 실패/컴파일 결과 없음/호스트 publish 결과 없음에 구체적 메시지 ③ `@vscode/vsce`를 4.x(Node 22 필요) → **3.9.2(Node 20 필요)** 로 낮춰 지원 PC 확대(`@vscode/test-electron`은 Node 22 필요하나 테스트 전용이라 패키징에 무관, EBADENGINE 경고만) ④ `global.json`(SDK 10 이상, `rollForward: latestMajor`) — SDK 10이 없으면 불친절한 빌드 오류 대신 명확한 메시지 ⑤ `.gitattributes`(`* text=auto`, `*.ps1/*.cmd/*.wsb`는 CRLF, 바이너리 지정) — PC의 `core.autocrlf` 설정과 무관하게 BOM+CRLF 스크립트로 체크아웃 ⑥ `check_environment.ps1 -PackagingOnly`(패키징 필수 항목만, Desktop Runtime/VS Code/git은 선택) + Node 버전 점검 ⑦ README "소스에서 .vsix 만들기"(준비물 표, 4단계, 문제 해결 표)와 doc/00 요구사항 표를 "패키징만 / 테스트까지"로 분리.
+- **검증(실측)**: 방금 푼 **새 클론**을 **공백+한글이 들어간 경로**(`...\빌드 테스트 폴더\소스 클론`)에, `core.autocrlf=false`로, `node_modules`/`artifacts` 없이 만들고, **저장소 밖 작업 폴더(C:\Windows)** 에서 README의 명령 그대로 실행 → **102초 만에 성공**(npm ci + publish 포함, 176KB .vsix). 그 클론의 `.vsix`로 **설치 스모크 통과**(번들 호스트, 실제 `dotnet new wpf` 프로젝트 미리보기). 실패 경로: 요구 버전을 높인 복사본은 .NET/Node 부족 두 항목을 한 번에 안내하고 종료 코드 1, `node_modules` 없이 `-SkipInstall`은 `npm ci` 안내와 종료 코드 1.
+- **미검증/제한**: ① 같은 PC에서 한 시뮬레이션이라 **.NET SDK 10/Node가 아예 없는 PC**, Node 20·21 PC(EBADENGINE 경로), 프록시/오프라인 PC, 실행 정책이 `Restricted`인 PC에서의 첫 실행은 직접 확인하지 못했다(이 PC에는 SDK 8도 함께 설치되어 있어 "여러 SDK 중 10 선택"은 확인) ② 오프라인 환경은 지원하지 않는다(npm/NuGet 복원 필요) ③ `winget`이 없는 PC에서는 README의 설치 링크(공식 사이트)를 써야 한다 ④ ZIP으로 받은 소스의 "인터넷에서 받은 파일" 차단은 `Unblock-File` 안내만 있고 시험하지 않았다.
+
 ## 3. 위험과 대응
 
 | 위험 | 영향 | 대응 |

@@ -83,6 +83,7 @@ cd extension; npm install; cd ..   # 확장 의존성 (node_modules는 git에 �
 | 미신뢰 폴더 정책 | Workspace Trust 아니면 자리표시자만(Tier 0) | M4B |
 | 지원 TFM 하한 | net8.0-windows 이상 공식, 레거시는 "그려지면 다행" | M4 |
 | 확장 이름/게시자 | **확정**: WPF XAML Live Preview / phulgrimlab | 완료 |
+| 소스에서 .vsix 빌드 | 어느 Windows PC에서든 `tools\package\build_vsix.ps1` 한 번(README 참고). 새 클론/공백·한글 경로에서 검증 | 완료 |
 
 ## 8. 다음 작업: M3 시작 가이드
 02 문서 M3 표(3.1~3.4)가 기준이다. 시작 전 알아둘 점:

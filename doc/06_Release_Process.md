@@ -32,8 +32,10 @@ git push origin v<버전>
 
 ### 2-2. `.vsix` 만들기
 ```powershell
-cd extension; npm run package      # -> artifacts\wpf-xaml-live-preview-<버전>.vsix + artifacts\SHA256SUMS.txt
+.\tools\package\build_vsix.ps1    # (또는 cd extension; npm run package)
+# -> artifacts\wpf-xaml-live-preview-<버전>.vsix + artifacts\SHA256SUMS.txt
 ```
+준비물/문제 해결은 루트 README의 "소스에서 `.vsix` 만들기". 어느 PC에서 만들든 되지만 **릴리스에는 한 번 만든 `.vsix`와 그 `SHA256SUMS.txt`를 한 쌍으로** 쓴다(다시 만들면 체크섬이 달라진다).
 
 ### 2-3-a. 웹 UI로 릴리스 (도구 설치 불필요)
 1. 저장소 → **Releases** → **Draft a new release** → 태그 `v<버전>` 선택.
