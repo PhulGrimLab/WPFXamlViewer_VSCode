@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "comment": "패키징 전용: 확장 본체(src)만 컴파일한다. 테스트 코드(@vscode/test-electron 등 개발 도구에 의존)는 제외하므로 .vsix 빌드가 더 빠르고 단순하다. 출력 위치(out/src)는 기본 tsconfig와 같다.",
+  "include": ["src/**/*.ts"]
+}

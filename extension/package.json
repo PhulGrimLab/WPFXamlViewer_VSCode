@@ -63,14 +63,15 @@
     "test:realhost": "npm run compile && mocha --timeout 30000 \"out/test/realhost/**/*.test.js\"",
     "test:integration": "npm run compile && node out/test/integration/runTest.js",
     "package": "powershell -NoProfile -ExecutionPolicy Bypass -File ../tools/package/build_vsix.ps1",
-    "test:smoke": "npm run compile && node out/test/smoke/runSmoke.js"
+    "test:smoke": "npm run compile && node out/test/smoke/runSmoke.js",
+    "compile:build": "tsc -p ./tsconfig.build.json"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.0.0",
     "@types/vscode": "^1.90.0",
     "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^4.0.0",
+    "@vscode/vsce": "^3.9.2",
     "mocha": "^11.0.0",
     "typescript": "^5.6.0"
   }

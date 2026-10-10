@@ -16,14 +16,20 @@
 
 ## 2. 요구사항 표 (개발 환경)
 
-| 구성 요소 | 필수 | 용도 | 이 머신 상태 (2026-10-06) |
+두 가지 목적에 따라 필요한 것이 다르다. **`.vsix`만 만들 때는 VS Code도 Desktop Runtime도 필요 없다.**
+
+| 구성 요소 | `.vsix` 만들기 | 테스트/개발 | 용도 |
 |---|---|---|---|
-| Windows 10/11 x64 | 필수 | WPF 렌더 호스트 실행 | Windows 11 Pro ✔ |
-| **.NET SDK 10.x** | 필수 | 호스트(`net10.0-windows`, WPF) 빌드/테스트 | 10.0.400 ✔ |
-| VS Code | 필수 | 확장 실행/디버깅 | 1.136.1 ✔ |
-| **Node.js LTS + npm** | 필수 | 확장(TypeScript) 빌드, 테스트, `vsce` 패키징 | 설치함(2026-10-06): Node 24.19.0 / npm 11.17.0 ✔ |
-| git | 필수 | 형상관리 | ✔ |
-| Visual Studio 2019/2026 | **불필요** | — (이 머신에는 둘 다 있으나 의존하지 않는다) | 있음(미사용) |
+| Windows 10/11 x64 | 필수 | 필수 | WPF 렌더 호스트(Windows 전용) |
+| **.NET SDK 10.x** | 필수 | 필수 | 호스트(`net10.0-windows`, WPF) 빌드/publish/테스트. `global.json`이 10 이상을 요구 |
+| **Node.js 20 이상 + npm** | 필수(20+) | 필수(**22+** 권장) | 확장(TypeScript) 컴파일, `vsce` 패키징(vsce 3.x = Node 20+), 통합 테스트(`@vscode/test-electron` = Node 22+) |
+| 인터넷 | 처음 한 번 | 처음 한 번 | `npm ci`, NuGet 복원, (테스트) VS Code 다운로드/`dotnet new wpf` |
+| .NET 10 Desktop Runtime | 불필요 | 필수 | 호스트 실행(SDK 설치 프로그램에 함께 들어 있다) |
+| VS Code (+`code` CLI) | 불필요 | 필수 | 확장 실행/통합 테스트/설치 시험 |
+| git | 소스를 내려받을 때 | 필수 | 형상관리(소스를 ZIP으로 받으면 불필요) |
+| Visual Studio | **불필요** | **불필요** | — (있어도 의존하지 않는다) |
+
+점검: `.\doc\check_environment.ps1 -PackagingOnly`(패키징만) 또는 옵션 없이(테스트까지). 빠진 항목은 설치 방법과 함께 알려 주고 자동으로 설치하지 않는다.
 
 ## 3. 결정 사항: 렌더 호스트는 SDK-style `net10.0-windows` WPF
 
