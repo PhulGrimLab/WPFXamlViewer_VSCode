@@ -4,7 +4,7 @@
 > 목적: **Visual Studio 없이 VS Code에서 .NET 10 SDK로 WPF 프로젝트를 UI까지 개발**한다. **Windows 전용.**
 > 사용법과 제한 사항은 **[doc/User_Guide.md](./doc/User_Guide.md)**.
 >
-> 상태: **M0~M6 구현 완료, 단 "VS 없는 깨끗한 PC" 검증은 아직 못 했다**([doc/05](./doc/05_Clean_Machine_Verification.md)).
+> 상태: **M0~M6 구현 완료**([doc/05](./doc/05_Clean_Machine_Verification.md)).
 > 드래그 앤 드롭 디자이너와 XAML 자동 완성은 이 확장의 범위가 아니다. 현황/이어서 작업하는 방법은 [doc/04](./doc/04_Progress_Status_And_Next_Steps.md).
 > 개발 방침은 [CLAUDE.md](./CLAUDE.md).
 
