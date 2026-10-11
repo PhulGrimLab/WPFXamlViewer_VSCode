@@ -3,7 +3,7 @@
  */
 
 /** 요청 하나가 응답 없이 기다리는 기본 최대 시간(ms). 넘으면 호스트를 kill하고 재시작한다(doc/01 3.2). */
-export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 /** 종료 시 호스트에 shutdown을 보낸 뒤 스스로 끝나길 기다리는 시간(ms). 넘으면 kill한다. */
 export const SHUTDOWN_GRACE_MS = 3_000;

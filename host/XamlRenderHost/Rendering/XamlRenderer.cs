@@ -176,6 +176,21 @@ public static class XamlRenderer
                     warnings.Add(new RenderWarning(WarningCodes.UserControlFailed, $"{replacement.TypeName}: {summary}", replacement.Line, replacement.Column));
                 }
             }
+            catch (XamlRenderException ex) when (attempt < MaxUserFailureReplacements
+                && ex.Code == RenderErrorCodes.XamlParse && ex.Line.HasValue && ex.Column.HasValue)
+            {
+                // 사용자 코드가 아닌 파싱 실패: 인라인된 병합 사전/앱 리소스 안의 요소면 그 요소만 건너뛰고 계속한다. 문서 본문의 오류는 그대로 보고한다.
+                var removal = XamlPreprocessor.RemoveFailedInlinedElement(xaml, ex.Line.Value, ex.Column.Value);
+                if (removal == null)
+                {
+                    throw;
+                }
+                else
+                {
+                    xaml = removal.Xaml;
+                    warnings.Add(new RenderWarning(WarningCodes.InlinedElementSkipped, $"병합 사전의 {removal.TypeName} 요소를 읽지 못해 건너뜁니다: {Summarize(ex)}", removal.Line, removal.Column));
+                }
+            }
         }
     }
 

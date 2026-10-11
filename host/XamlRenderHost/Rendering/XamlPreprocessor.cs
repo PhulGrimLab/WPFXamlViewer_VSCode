@@ -52,6 +52,12 @@ public static class WarningCodes
 
     /// <summary>병합 사전 파일을 찾지 못했거나 읽을 수 없어 빈 사전으로 대체했다.</summary>
     public const string DictionaryUnavailable = "DictionaryUnavailable";
+
+    /// <summary>`pack://application:` 리소스(앱 아이콘 등)를 값으로 쓰는 Setter를 제거했다(미리보기에는 실행 중인 Application이 없어 로드할 수 없다).</summary>
+    public const string RemovedApplicationResource = "RemovedApplicationResource";
+
+    /// <summary>병합 사전/앱 리소스 안의 요소가 파싱에 실패해 그 요소만 건너뛰고 나머지를 그렸다.</summary>
+    public const string InlinedElementSkipped = "InlinedElementSkipped";
 }
 
 /// <summary>
@@ -158,6 +164,7 @@ public static partial class XamlPreprocessor
             using var reader = XmlReader.Create(stringReader, new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit });
             var lineInfo = (IXmlLineInfo)reader;
             var openTagged = new Stack<(SourceElement Element, int Depth)>(); // 끝 위치를 아직 모르는 태그된 요소
+            var ancestorNames = new List<string>(); // 깊이별 현재 조상 요소의 로컬 이름(부모가 리소스 사전인지 판단하는 데 쓴다)
             while (reader.Read())
             {
                 if (reader.NodeType == XmlNodeType.EndElement)
@@ -183,11 +190,39 @@ public static partial class XamlPreprocessor
                 }
 
                 var elementStart = ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition) - 1; // '<' 위치
+                if (ancestorNames.Count > reader.Depth)
+                {
+                    ancestorNames.RemoveRange(reader.Depth, ancestorNames.Count - reader.Depth);
+                }
+                else
+                {
+                    // 같은 깊이 이하로 되돌아가지 않았다.
+                }
+                var parentName = reader.Depth > 0 && ancestorNames.Count >= reader.Depth ? ancestorNames[reader.Depth - 1] : null;
+                ancestorNames.Add(reader.LocalName);
+
                 if (IsXamlCodeElement(reader))
                 {
                     var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
                     edits.Add(new Edit(elementStart, end, BlankPreservingNewlines(xaml, elementStart, end)));
                     warnings.Add(new RenderWarning(WarningCodes.RemovedCodeBlock, "x:Code 블록을 제거했습니다.", lineInfo.LineNumber, lineInfo.LinePosition - 1));
+                }
+                else if (IsApplicationPackSetter(reader))
+                {
+                    // Style의 `<Setter Property="Icon" Value="pack://application:,,,/app.ico"/>` 같은 값은 파싱 중에 즉시 로드되어 Setter 초기화가 실패한다.
+                    // 시각 결과에 영향이 거의 없으므로 Setter 전체를 줄바꿈만 남기고 지운다.
+                    var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
+                    edits.Add(new Edit(elementStart, end, BlankPreservingNewlines(xaml, elementStart, end)));
+                    warnings.Add(new RenderWarning(WarningCodes.RemovedApplicationResource, $"앱 리소스(pack://application) 값을 쓰는 Setter({reader.GetAttribute("Property")})를 제거했습니다.", lineInfo.LineNumber, lineInfo.LinePosition - 1));
+                }
+                else if (TypedDefinitionStandIn(reader, context, parentName) is { } standIn)
+                {
+                    // 해석 불가 타입을 대상으로 하는 Style/ControlTemplate/DataTemplate: 그 타입을 못 만드는 Tier 0에서는 정의 전체를 대체/제거한다.
+                    var (line, col) = (lineInfo.LineNumber, lineInfo.LinePosition - 1);
+                    var definitionName = reader.LocalName;
+                    var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
+                    edits.Add(new Edit(elementStart, end, standIn + NewlinesIn(xaml, elementStart, end)));
+                    warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, $"해석할 수 없는 타입을 대상으로 하는 {definitionName}을(를) 건너뜁니다.", line, col));
                 }
                 else if (IsDictionaryWithSource(reader))
                 {
@@ -252,6 +287,141 @@ public static partial class XamlPreprocessor
     private static bool IsXamlCodeElement(XmlReader reader)
         => reader.NamespaceURI == XamlLanguageNamespace && reader.LocalName == "Code";
 
+    /// <summary>대상 타입(TargetType/DataType)을 가질 수 있는 정의 요소들.</summary>
+    private static readonly HashSet<string> TypedDefinitionNames = new(StringComparer.Ordinal)
+    {
+        "Style", "ControlTemplate", "DataTemplate", "HierarchicalDataTemplate",
+    };
+
+    /// <summary>`{x:Type 접두사:이름}` 참조(접두사/이름을 캡처). x 접두사는 일반적으로 x지만 다른 이름일 수 있어 그룹 1로 받는다.</summary>
+    private static readonly Regex XTypeReference = new(@"\{\s*(\w+):Type\s+(\w+):([\w.]+)\s*\}", RegexOptions.CultureInvariant);
+
+    /// <summary>`TargetType="접두사:이름"`처럼 마크업 확장 없이 쓴 타입 참조.</summary>
+    private static readonly Regex PlainTypeReference = new(@"^\s*(\w+):([\w.]+)\s*$", RegexOptions.CultureInvariant);
+
+    /// <summary>대체 정의에서 쓰는, 항상 해석되는 기반 타입.</summary>
+    private const string StandInStyleTarget = "FrameworkElement";
+    private const string StandInTemplateTarget = "Control";
+
+    /// <summary>접두사가 가리키는 clr-namespace의 타입이 해석되지 않는가(XAML 언어/WPF 네임스페이스나 prefix 미선언은 해당 없음).</summary>
+    private static bool IsUnresolvableTypeReference(XmlReader reader, Context context, string prefix, string typeName)
+    {
+        var ns = reader.LookupNamespace(prefix);
+        if (ns == null || !ns.StartsWith(ClrNamespacePrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+        else
+        {
+            var type = context.Schema.GetXamlType(new XamlTypeName(WithProjectAssembly(ns, context), typeName));
+            return type == null || type.IsUnknown;
+        }
+    }
+
+    /// <summary>
+    /// TargetType/DataType이 해석 불가 타입을 가리키는 Style/ControlTemplate/DataTemplate이면 대체 문자열을 돌려준다(아니면 null).
+    /// 규칙: x:Key가 있으면 같은 키의 빈 정의(그 키를 `{StaticResource}`/BasedOn으로 쓰는 곳이 깨지지 않게),
+    /// 키가 없고 부모가 리소스 사전이면 빈 문자열(제거: 암시적 스타일은 같은 대체 타입으로 중복 키가 생기므로),
+    /// 키가 없고 다른 속성 값 자리(`Button.Template`, `Setter.Value` 등)면 빈 정의로 바꾼다.
+    /// </summary>
+    private static string? TypedDefinitionStandIn(XmlReader reader, Context context, string? parentName)
+    {
+        if (reader.NamespaceURI != PresentationNamespace || !TypedDefinitionNames.Contains(reader.LocalName))
+        {
+            return null;
+        }
+        else
+        {
+            // 정의 요소 후보.
+        }
+
+        var unresolvable = false;
+        foreach (var attributeName in new[] { "TargetType", "DataType" })
+        {
+            var value = reader.GetAttribute(attributeName);
+            if (value == null)
+            {
+                continue;
+            }
+            else
+            {
+                // 대상 타입 속성 있음.
+            }
+
+            var match = XTypeReference.Match(value);
+            var plain = PlainTypeReference.Match(value);
+            if (match.Success && value.Trim() == match.Value && reader.LookupNamespace(match.Groups[1].Value) == XamlLanguageNamespace)
+            {
+                unresolvable |= IsUnresolvableTypeReference(reader, context, match.Groups[2].Value, match.Groups[3].Value);
+            }
+            else if (plain.Success)
+            {
+                unresolvable |= IsUnresolvableTypeReference(reader, context, plain.Groups[1].Value, plain.Groups[2].Value);
+            }
+            else
+            {
+                // 기본 타입 이름이거나 해석 가능한 형태: 대상 아님.
+            }
+        }
+        if (!unresolvable)
+        {
+            return null;
+        }
+        else
+        {
+            // 해석 불가 대상: 대체/제거.
+        }
+
+        var key = reader.GetAttribute("Key", XamlLanguageNamespace);
+        var hasUsableKey = !string.IsNullOrEmpty(key) && !key.Contains('{');
+        var inDictionary = parentName != null && (parentName == "ResourceDictionary" || parentName.EndsWith(".Resources", StringComparison.Ordinal));
+        if (!hasUsableKey && inDictionary)
+        {
+            return string.Empty; // 키 없는 사전 항목(암시적 스타일/템플릿)은 지운다.
+        }
+        else
+        {
+            // 빈 대체 정의를 만든다.
+        }
+
+        var keyAttribute = hasUsableKey ? $" xmlns:x=\"{XamlLanguageNamespace}\" x:Key=\"{System.Security.SecurityElement.Escape(key)}\"" : string.Empty;
+        var targetAttribute = reader.LocalName switch
+        {
+            "Style" => $" TargetType=\"{StandInStyleTarget}\"",
+            "ControlTemplate" => $" TargetType=\"{StandInTemplateTarget}\"",
+            _ => string.Empty,
+        };
+        return $"<{reader.LocalName} xmlns=\"{PresentationNamespace}\"{keyAttribute}{targetAttribute}/>";
+    }
+
+    /// <summary>
+    /// 속성 값 속의 `{x:Type 접두사:이름}` 중 해석 불가 타입을 `{x:Type FrameworkElement}`로 바꾼 속성 원문을 돌려준다(바꿀 것이 없으면 null).
+    /// 원문 텍스트(따옴표 포함)를 대상으로 하므로 호출자가 속성 구간 전체를 이 결과로 교체한다.
+    /// </summary>
+    private static string? ReplaceUnresolvableTypeReferences(XmlReader reader, Context context, string attributeText)
+    {
+        var changed = false;
+        var replaced = XTypeReference.Replace(attributeText, match =>
+        {
+            if (reader.LookupNamespace(match.Groups[1].Value) == XamlLanguageNamespace
+                && IsUnresolvableTypeReference(reader, context, match.Groups[2].Value, match.Groups[3].Value))
+            {
+                changed = true;
+                return $"{{{match.Groups[1].Value}:Type {StandInStyleTarget}}}";
+            }
+            else
+            {
+                return match.Value;
+            }
+        });
+        return changed ? replaced : null;
+    }
+
+    /// <summary>값이 `pack://application:` URI인 `Setter`(속성 요소가 아닌 `Value` 속성 형태)인가.</summary>
+    private static bool IsApplicationPackSetter(XmlReader reader)
+        => reader.NamespaceURI == PresentationNamespace && reader.LocalName == "Setter"
+            && reader.GetAttribute("Value")?.TrimStart().StartsWith("pack://application:", StringComparison.OrdinalIgnoreCase) == true;
+
     private static bool IsDictionaryWithSource(XmlReader reader)
         => reader.NamespaceURI == PresentationNamespace && reader.LocalName == "ResourceDictionary" && reader.GetAttribute("Source") != null;
 
@@ -281,7 +451,8 @@ public static partial class XamlPreprocessor
             // 속성 있음: 아래에서 검사.
         }
 
-        var elementNamespace = reader.NamespaceURI;
+        // 사용자 컨트롤(`assembly=` 없는 clr-namespace)의 Click 같은 이벤트도 찾으려면 프로젝트 어셈블리 이름을 붙여 조회해야 한다.
+        var elementNamespace = WithProjectAssembly(reader.NamespaceURI, context);
         var elementLocal = reader.LocalName;
         while (reader.MoveToNextAttribute())
         {
@@ -307,6 +478,27 @@ public static partial class XamlPreprocessor
             else
             {
                 // 유지할 속성.
+            }
+
+            if (code == null && reader.Value.Contains(":Type", StringComparison.Ordinal))
+            {
+                // `{x:Type local:Foo}`의 Foo를 만들 수 없으면(Tier 0) 항상 있는 타입으로 바꿔 파싱이 막히지 않게 한다.
+                var attributeStart = ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition);
+                var attributeEnd = FindAttributeEnd(xaml, attributeStart);
+                var replacedAttribute = ReplaceUnresolvableTypeReferences(reader, context, xaml.Substring(attributeStart, attributeEnd - attributeStart));
+                if (replacedAttribute != null)
+                {
+                    edits.Add(new Edit(attributeStart, attributeEnd, replacedAttribute));
+                    context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, $"{reader.Name} 속성의 해석할 수 없는 타입 참조를 {StandInStyleTarget}로 대체했습니다.", lineInfo.LineNumber, lineInfo.LinePosition));
+                }
+                else
+                {
+                    // 모두 해석 가능하거나 대체할 참조 없음.
+                }
+            }
+            else
+            {
+                // 타입 참조 없음.
             }
 
             if (code != null)
@@ -398,12 +590,45 @@ public static partial class XamlPreprocessor
         return needsAssembly ? $"{xmlNamespace};assembly={context.ProjectAssemblyName}" : xmlNamespace;
     }
 
+    /// <summary>xmlns 값(`clr-namespace:X;assembly=이름`)에서 어셈블리 이름을 꺼낸다. clr-namespace가 아니거나 지정이 없으면 null.</summary>
+    private static string? ReferencedAssemblyName(string xmlNamespace)
+    {
+        const string assemblyMarker = ";assembly=";
+        if (!xmlNamespace.StartsWith(ClrNamespacePrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+        else
+        {
+            var index = xmlNamespace.IndexOf(assemblyMarker, StringComparison.OrdinalIgnoreCase);
+            return index < 0 ? null : xmlNamespace[(index + assemblyMarker.Length)..].Trim();
+        }
+    }
+
     /// <summary>
     /// xmlns 선언의 값이 `assembly=` 없는 clr-namespace이고 프로젝트 어셈블리가 있으면, 닫는 따옴표 앞에 `;assembly=이름`을 끼워 넣는다.
     /// 그래야 XamlReader가 "현재 프로젝트의 타입"을 로드된 어셈블리에서 찾는다(XamlReader.Parse에는 로컬 어셈블리 개념이 없다).
     /// </summary>
     private static void AddProjectAssemblyToNamespace(XmlReader reader, string xaml, List<int> lineStarts, IXmlLineInfo lineInfo, Context context, List<Edit> edits)
     {
+        if (context.ProjectAssemblyName != null)
+        {
+            // Tier 1: `assembly=`로 참조한 프로젝트 의존 어셈블리를 지금 로드한다(UserAssemblies가 의존성을 미리 전부 로드하지 않는다).
+            var referenced = ReferencedAssemblyName(reader.Value);
+            if (referenced != null)
+            {
+                XamlRenderHost.Projects.UserAssemblies.Instance.EnsureReferencedAssemblyLoaded(referenced);
+            }
+            else
+            {
+                // 어셈블리 지정 없음(프로젝트 어셈블리 자신이거나 clr-namespace가 아님).
+            }
+        }
+        else
+        {
+            // Tier 0: 사용자 어셈블리가 없다.
+        }
+
         var rewritten = WithProjectAssembly(reader.Value, context);
         if (!ReferenceEquals(rewritten, reader.Value) && rewritten != reader.Value)
         {
@@ -508,7 +733,7 @@ public static partial class XamlPreprocessor
             var text = File.ReadAllText(resolved);
             var inner = ProcessInternal(text, resolved, context, depth + 1);
             // XML 선언은 요소 중간에 올 수 없으므로 제거한다.
-            return Regex.Replace(inner.TrimStart('\uFEFF'), @"^\s*<\?xml[^>]*\?>", string.Empty);
+            return InlineBeginMarker + Regex.Replace(inner.TrimStart('\uFEFF'), @"^\s*<\?xml[^>]*\?>", string.Empty) + InlineEndMarker;
         }
         catch (IOException ex)
         {

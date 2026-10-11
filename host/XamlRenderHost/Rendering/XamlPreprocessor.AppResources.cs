@@ -164,7 +164,7 @@ public static partial class XamlPreprocessor
             }
         }
 
-        return SingleLine(dictionary.ToString(SaveOptions.DisableFormatting));
+        return InlineBeginMarker + SingleLine(dictionary.ToString(SaveOptions.DisableFormatting)) + InlineEndMarker;
     }
 
     /// <summary>줄 수를 바꾸지 않도록 문자열 안의 줄바꿈 문자를 문자 참조로 바꾼다(요소 사이 공백은 파싱에서 이미 제거됨).</summary>

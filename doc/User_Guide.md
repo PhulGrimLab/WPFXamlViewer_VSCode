@@ -50,7 +50,7 @@ XAML에 프로젝트의 사용자 컨트롤(`xmlns:local="clr-namespace:MyApp"`)
 
 | 방식 | 조건 | 결과 |
 |---|---|---|
-| **Tier 1 (실제 렌더)** | 폴더를 **신뢰**했고, 가장 가까운 `.csproj`의 `bin/**/<AssemblyName>.dll` 빌드 산출물이 있음 | 프로젝트 DLL을 불러와 컨트롤을 실제로 만들어 그린다 |
+| **Tier 1 (실제 렌더)** | 폴더를 **신뢰**했고, 가장 가까운 `.csproj`의 `bin/**/<AssemblyName>.dll` 빌드 산출물이 있음(없으면 앱 프로젝트의 `<AssemblyName>.exe`) | 프로젝트 DLL을 불러와 컨트롤을 실제로 만들어 그린다 |
 | **Tier 0 (자리표시자)** | 폴더를 신뢰하지 않았거나, 빌드 산출물이 없거나, 로드에 실패 | 사용자 컨트롤을 타입 이름이 적힌 붉은 박스로 표시하고 나머지는 정상 렌더 |
 
 - 산출물이 여러 개(구성/TFM별)이면 **수정 시각이 가장 최신인 DLL**을 쓴다. 이 확장은 빌드하지 않는다.
@@ -62,7 +62,7 @@ XAML에 프로젝트의 사용자 컨트롤(`xmlns:local="clr-namespace:MyApp"`)
 ### 보안 — 반드시 읽어 주세요
 Tier 1은 프로젝트의 **사용자 코드(생성자 등)를 이 PC에서 그대로 실행**한다. 샌드박스는 없다. 그래서 **신뢰하는 폴더에서만** 켜진다
 (VS Code의 Workspace Trust). 신뢰하지 않은 폴더에서는 사용자 코드를 절대 불러오지 않는다. 생성자에서 파일/네트워크/DB에 접근하는 컨트롤은
-미리보기 때도 그 동작이 실행되며, 느리거나 그려지지 않을 수 있다. 요청이 제한 시간(기본 10초) 안에 끝나지 않으면 호스트를 강제 종료하고 다음 편집 때 다시 시작한다.
+미리보기 때도 그 동작이 실행되며, 느리거나 그려지지 않을 수 있다. 요청이 제한 시간(기본 30초; 출력 폴더가 큰 프로젝트는 처음 한 번 불러오는 데 수 초가 걸린다) 안에 끝나지 않으면 호스트를 강제 종료하고 다음 편집 때 다시 시작한다.
 
 ## 6. 문서 변환 규칙 (코드 비하인드 없이 그리기)
 
@@ -75,6 +75,10 @@ Tier 1은 프로젝트의 **사용자 코드(생성자 등)를 이 PC에서 그�
 | `x:Code` 블록 | 제거 | `RemovedCodeBlock` |
 | 해석할 수 없는 사용자 타입 | 자리표시자 박스 | `PlaceholderUsed` (+ 이유: `ProjectTier0`) |
 | 사용자 컨트롤 생성 예외 | 오류 박스 | `UserControlFailed` |
+| 해석할 수 없는 타입을 `TargetType`/`DataType`으로 쓰는 `Style`/`ControlTemplate`/`DataTemplate`(Tier 0) | `x:Key`가 있으면 같은 키의 빈 정의, 키 없는 사전 항목은 제거 | `PlaceholderUsed` |
+| 속성 값 속 `{x:Type local:Foo}`(해석 불가, Tier 0) | `{x:Type FrameworkElement}`로 대체 | `PlaceholderUsed` |
+| 병합 사전/`App.xaml` 리소스 안의 요소가 파싱 실패 | 그 요소만 건너뛰고 계속(문서 본문의 오류는 건너뛰지 않음) | `InlinedElementSkipped` |
+| `Setter`의 `Value="pack://application:..."`(앱 아이콘 등) | Setter 제거(미리보기에는 실행 중인 앱이 없어 로드 불가) | `RemovedApplicationResource` |
 | `ResourceDictionary Source="..."` | 파일을 읽어 인라인(없거나 순환이면 빈 사전) | `DictionaryUnavailable` |
 | `Window` 루트 | 창 크롬 없이 콘텐츠만 `Width`/`Height` 크기로 그림 | — |
 | `d:`/`mc:Ignorable` 디자인 타임 속성 | 그대로(런타임 값 사용, `d:DesignWidth/Height`는 크기에 반영) | — |
@@ -86,7 +90,8 @@ Tier 1은 프로젝트의 **사용자 코드(생성자 등)를 이 PC에서 그�
 
 - **정적 렌더**: 로드 후 코드 비하인드(`InitializeComponent` 이후 로직, 이벤트 처리, 바인딩 DataContext 설정 등)는 실행되지 않는다. 바인딩은 값이 없는 상태로 그려진다.
 - **창 크롬 없음**: `Window`의 제목 표시줄/테두리는 그리지 않는다. `SizeToContent`, `WindowStyle` 등 창 속성은 무시한다.
-- **`{x:Type local:Foo}`, `{x:Static local:Foo.Bar}`, `TargetType="local:Foo"`** 처럼 요소가 아닌 자리에서 해석 불가 타입을 쓰면 자리표시자로 대체하지 못하고 오류가 난다. 신뢰된 폴더에서 DLL이 로드되면(Tier 1) 타입이 해석되므로 대부분 해결될 것으로 보지만 **시험해 보지 않았다.**
+- **`{x:Static local:Foo.Bar}`** 처럼 멤버 값이 필요한 자리에서 해석 불가 타입(Tier 0)을 쓰면 대체할 수 없어 오류가 난다. `{x:Type local:Foo}`와 `Style`/템플릿의 `TargetType`/`DataType`은 대체한다(6절). 신뢰된 폴더에서 빌드 산출물(`.dll`, 앱 프로젝트는 `.exe`)이 로드되면(Tier 1) 타입이 해석된다. WPF 앱 프로젝트(.NET Framework 4.8)로 시험했다.
+- 큰 프로젝트는 **처음 한 번** 산출물을 불러오느라 수 초 걸릴 수 있다. 같은 호스트에서는 산출물이 바뀌기 전까지 다시 불러오지 않는다.
 - 사용자 컨트롤 자리표시자(Tier 0)는 그 안의 자식 요소를 그리지 않는다.
 - 크기가 0인 요소(빈 `Border`, `Collapsed`)는 클릭으로 선택할 수 없다. `Uid`를 직접 지정한 요소는 클릭 매핑에서 제외된다.
 - 대상 프로젝트가 net8/net9여도 호스트(net10)에서 로드한다. 해당 TFM 전용 동작 차이는 시험하지 않았다.

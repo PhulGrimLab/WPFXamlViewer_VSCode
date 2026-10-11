@@ -46,6 +46,16 @@ public class PreprocessorTests
     }
 
     [TestMethod]
+    public void X03b_ApplicationPackSetter_IsRemovedAndRestRenders()
+    {
+        // Window Icon 같은 pack://application 값은 파싱 중 즉시 로드되어 Setter 초기화가 실패한다 → Setter만 지우고 나머지는 그린다.
+        var xaml = $"<Grid {Ns} {XNs} Width=\"40\" Height=\"30\">\n<Grid.Resources><Style TargetType=\"Window\">\n<Setter Property=\"Icon\" Value=\"pack://application:,,,/app.ico\" />\n<Setter Property=\"UseLayoutRounding\" Value=\"True\" />\n</Style></Grid.Resources>\n</Grid>";
+        var result = RenderTestHelper.Render(xaml);
+        Assert.AreEqual(40, result.PixelWidth);
+        Assert.AreEqual(1, Codes(result).Count(c => c == WarningCodes.RemovedApplicationResource));
+    }
+
+    [TestMethod]
     public void X04_DesignTimeAttributes_AreIgnoredAndDesignSizeApplies()
     {
         var result = RenderTestHelper.Render(Fixture("R12_DesignTime"));
@@ -100,6 +110,34 @@ public class PreprocessorTests
         StringAssert.Contains(placeholders[0].Message, "local:FancyGauge");
         Assert.AreEqual(6, placeholders[0].Line);
         Assert.AreEqual(220, result.PixelWidth);
+    }
+
+    private const string UnknownNs = "xmlns:l=\"clr-namespace:Nope;assembly=Nope\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"";
+
+    [TestMethod]
+    public void U03_Tier0_StylesAndTemplatesForUnknownTypes_AreStoodIn()
+    {
+        // 사용자 타입을 못 만드는 Tier 0: {x:Type l:Foo}/TargetType="l:Foo" 정의 때문에 문서 전체가 실패하면 안 된다.
+        var xaml = $"<StackPanel {Ns} {UnknownNs} Width=\"60\" Height=\"40\">\n"
+            + "<StackPanel.Resources>\n"
+            + "<Style x:Key=\"K\" TargetType=\"{x:Type l:Foo}\"><Setter Property=\"Orientation\" Value=\"Horizontal\"/></Style>\n"
+            + "<Style x:Key=\"D\" TargetType=\"{x:Type l:Foo}\" BasedOn=\"{StaticResource K}\"/>\n"
+            + "<Style TargetType=\"{x:Type l:Foo}\"><Setter Property=\"IconSize\" Value=\"3\"/></Style>\n"
+            + "<DataTemplate DataType=\"{x:Type l:Foo}\"><TextBlock Text=\"x\"/></DataTemplate>\n"
+            + "</StackPanel.Resources>\n"
+            + "<Button Tag=\"{x:Type l:Foo}\" Style=\"{StaticResource K}\">\n<Button.Template><ControlTemplate TargetType=\"{x:Type l:Foo}\"><Border/></ControlTemplate></Button.Template>\n</Button>\n"
+            + "</StackPanel>";
+        var result = RenderTestHelper.Render(xaml);
+        Assert.AreEqual(60, result.PixelWidth);
+        Assert.IsGreaterThanOrEqualTo(4, Codes(result).Count(c => c == WarningCodes.PlaceholderUsed));
+    }
+
+    [TestMethod]
+    public void U04_Tier0_TypeStandIn_KeepsOriginalLineForLaterErrors()
+    {
+        var xaml = $"<StackPanel {Ns} {UnknownNs}>\n<StackPanel.Resources>\n<Style x:Key=\"K\" TargetType=\"{{x:Type l:Foo}}\"/>\n</StackPanel.Resources>\n<Button NoSuchProperty=\"1\"/>\n</StackPanel>";
+        var ex = RenderTestHelper.RenderExpectingFailure(xaml);
+        Assert.AreEqual(5, ex.Line);
     }
 
     [TestMethod]
@@ -167,6 +205,27 @@ public class PreprocessorTests
         }, "Main.xaml");
         Assert.AreEqual(40, result.PixelWidth);
         CollectionAssert.Contains(Codes(result), WarningCodes.DictionaryUnavailable);
+    }
+
+    private static string BadSetterStyle => "<Style TargetType=\"Button\"><Setter Property=\"Width\" Value=\"abc\"/></Style>";
+
+    [TestMethod]
+    public void RD05_FailingElementInMergedDictionary_IsSkippedWithWarning()
+    {
+        // 병합 사전(다른 파일)의 Setter 하나가 읽히지 않아도 문서 전체를 못 그리면 안 된다: 그 요소만 건너뛰고 경고한다.
+        var dictionary = $"<ResourceDictionary {Ns}>{BadSetterStyle}</ResourceDictionary>";
+        var result = RenderWithFiles(new() { ["Main.xaml"] = ButtonWith("<ResourceDictionary Source=\"Bad.xaml\"/>"), ["Bad.xaml"] = dictionary }, "Main.xaml");
+        Assert.AreEqual(40, result.PixelWidth);
+        CollectionAssert.Contains(Codes(result), WarningCodes.InlinedElementSkipped);
+    }
+
+    [TestMethod]
+    public void RD06_SameFailureInDocumentBody_IsStillAnError()
+    {
+        // 사용자가 편집 중인 문서 본문의 오류는 숨기지 않고 보고한다.
+        var xaml = $"<Button {Ns} Width=\"40\" Height=\"20\"><Button.Resources>{BadSetterStyle}</Button.Resources></Button>";
+        var ex = RenderTestHelper.RenderExpectingFailure(xaml);
+        Assert.AreEqual(RenderErrorCodes.XamlParse, ex.Code);
     }
 
     [TestMethod]

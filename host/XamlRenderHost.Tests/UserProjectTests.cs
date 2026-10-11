@@ -141,6 +141,26 @@ public class UserProjectTests
     }
 
     [TestMethod]
+    public void T07b_Locator_FallsBackToExeWhenNoDll()
+    {
+        // WPF 앱 프로젝트(WinExe)는 <AssemblyName>.exe만 나온다. DLL이 없을 때만 EXE를 쓰고, 둘 다 있으면 DLL이 우선이다.
+        using var project = UserProjectFixture.Create(withBuild: false);
+        var output = Path.Combine(project.Directory, "bin", "x64", "Debug");
+        Directory.CreateDirectory(output);
+        var exe = Path.Combine(output, "SampleControls.exe");
+        File.WriteAllText(exe, "exe");
+
+        var lookup = ProjectLocator.Find(project.XamlPath);
+        Assert.AreEqual(ProjectLookupReasons.Found, lookup.Reason);
+        Assert.AreEqual(exe, lookup.Artifact!.AssemblyPath);
+
+        var dll = Path.Combine(output, "SampleControls.dll");
+        File.WriteAllText(dll, "dll");
+        File.SetLastWriteTimeUtc(dll, DateTime.UtcNow.AddHours(-2));
+        Assert.AreEqual(dll, ProjectLocator.Find(project.XamlPath).Artifact!.AssemblyPath, "DLL이 있으면 더 오래돼도 DLL 우선");
+    }
+
+    [TestMethod]
     public void T09_Tier1_WorksTogetherWithAppXamlResources()
     {
         // Tier 1은 XamlReader.Load(XamlXmlReader) 경로를 쓴다: App.xaml 리소스 주입과 루트 속성 이동이 이 경로에서도 동작해야 한다.

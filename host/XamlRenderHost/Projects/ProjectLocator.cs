@@ -23,7 +23,7 @@ public static class ProjectLookupReasons
 
 /// <summary>
 /// XAML 파일에서 가장 가까운 `.csproj`와 그 빌드 산출물(`bin/&lt;Config&gt;/&lt;TFM&gt;/&lt;AssemblyName&gt;.dll`)을 찾는다(doc/01 3.3 규칙 2, M4B B.1).
-/// 규칙: 구성/TFM이 여러 개면 **수정 시각이 가장 최신인 DLL**을 고른다. 빌드는 하지 않는다. 상태 없는 정적 클래스(스레드 안전).
+/// 규칙: 구성/TFM이 여러 개면 **수정 시각이 가장 최신인 DLL**을 고른다(DLL이 하나도 없으면 `&lt;AssemblyName&gt;.exe`). 빌드는 하지 않는다. 상태 없는 정적 클래스(스레드 안전).
 /// </summary>
 public static class ProjectLocator
 {
@@ -53,7 +53,9 @@ public static class ProjectLocator
 
         var assemblyName = ReadAssemblyName(projectFile);
         var binDirectory = Path.Combine(Path.GetDirectoryName(projectFile)!, BinDirectoryName);
-        var newest = FindNewestAssembly(binDirectory, assemblyName + ".dll");
+        // DLL 우선. WPF/WinForms 앱 프로젝트(OutputType=WinExe/Exe)는 DLL이 없고 <AssemblyName>.exe만 나오므로 그때만 EXE를 쓴다.
+        var newest = FindNewestAssembly(binDirectory, assemblyName + ".dll")
+            ?? FindNewestAssembly(binDirectory, assemblyName + ".exe");
         return newest == null
             ? new ProjectLookup(null, ProjectLookupReasons.NoArtifact)
             : new ProjectLookup(new ProjectArtifact(projectFile, assemblyName, newest), ProjectLookupReasons.Found);

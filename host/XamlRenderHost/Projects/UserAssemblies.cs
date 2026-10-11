@@ -12,7 +12,8 @@ public sealed record UserAssemblyLoad(Assembly? Assembly, bool Reloaded, long Lo
 ///
 /// Owner: 프로세스 전체에서 하나(<see cref="Instance"/>). Lifetime: 프로세스 시작~종료(종료 시 임시 복사본 삭제).
 /// 스레드: 어느 스레드에서도 호출될 수 있다(렌더는 STA 스레드, 테스트는 병렬). 상태(로드 목록)는 <see cref="_gate"/> 잠금으로 보호한다.
-/// 로드 방식: 산출물 폴더 전체를 **임시 폴더에 복사한 뒤** 그 복사본에서 로드한다 — 원본 DLL을 잠그지 않아 사용자가 계속 빌드할 수 있다.
+/// 로드 방식: 산출물 폴더를 **임시 폴더에 복사한 뒤**(deps.json이 없으면 폴더 바로 아래 파일과 위성 어셈블리만, <see cref="CopyOutputDirectory"/>) 그 복사본에서 로드한다 — 원본 DLL을 잠그지 않아 사용자가 계속 빌드할 수 있다.
+/// 의존 어셈블리는 미리 전부 로드하지 않고 XAML이 참조할 때(<see cref="EnsureReferencedAssemblyLoaded"/>) 또는 필요할 때 로드한다.
 /// 원본의 수정 시각/크기가 바뀌면 이전 컨텍스트를 Unload하고 다시 만든다(갱신 시 재로드). 의존성은 deps.json 기반
 /// <see cref="AssemblyDependencyResolver"/>로 해석하고, WPF 등 프레임워크 어셈블리는 기본 컨텍스트에서 공유한다.
 /// XamlSchemaContext가 `assembly=이름`으로 찾는 어셈블리는 기본 컨텍스트의 Resolving 이벤트로 이 클래스가 대신 돌려준다.
@@ -138,7 +139,8 @@ public sealed class UserAssemblies
                 var copiedPath = Path.Combine(tempDirectory, Path.GetFileName(artifact.AssemblyPath));
                 var context = new UserLoadContext(copiedPath);
                 var assembly = context.LoadFromAssemblyPath(copiedPath);
-                context.PreloadDependencies(assembly);
+                // 의존성은 여기서 미리 로드하지 않는다(Roslyn 같은 큰 라이브러리까지 불러 첫 렌더가 수 초 느려진다). 필요할 때 Resolving/Load가 로드하고,
+                // 참조 목록 방식의 스키마 컨텍스트가 필요할 때만 GetContextAssemblies가 미리 로드한다.
                 _projects[artifact.ProjectFile] = new LoadedProject
                 {
                     SourcePath = artifact.AssemblyPath,
@@ -159,12 +161,44 @@ public sealed class UserAssemblies
     }
 
     /// <summary>
+    /// XAML이 `xmlns="clr-namespace:...;assembly=이름"`으로 참조한 어셈블리를 로드된 프로젝트 컨텍스트에서 미리 로드한다(이미 로드됐으면 그대로).
+    /// WPF 스키마 컨텍스트는 이미 로드된 어셈블리 중에서 이름으로 찾으므로, 참조되는 시점에 로드해 두어야 한다.
+    /// 프로젝트가 가져오지 않는 이름(프레임워크 등)이나 로드 실패는 무시한다(해석 실패는 이후 XAML 오류로 보고된다).
+    /// </summary>
+    public void EnsureReferencedAssemblyLoaded(string assemblyName)
+    {
+        lock (_gate)
+        {
+            foreach (var project in _projects.Values)
+            {
+                try
+                {
+                    project.Context.LoadFromAssemblyName(new AssemblyName(assemblyName));
+                    return;
+                }
+                catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or BadImageFormatException)
+                {
+                    // 이 프로젝트의 컨텍스트에는 없음: 다음 프로젝트 확인.
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// 지정한 사용자 어셈블리가 속한 컨텍스트의 어셈블리 전체(자신 + 미리 로드한 의존성)를 돌려준다.
     /// XamlSchemaContext의 참조 목록에 넣어 "같은 이름의 다른 복사본"과 섞이지 않게 하는 데 쓴다.
     /// </summary>
     public static IReadOnlyList<Assembly> GetContextAssemblies(Assembly userAssembly)
     {
         var context = AssemblyLoadContext.GetLoadContext(userAssembly);
+        if (context is UserLoadContext userContext)
+        {
+            userContext.PreloadDependencies(userAssembly); // 목록에 들어 있어야 하므로 지연해 둔 로드를 지금 한다.
+        }
+        else
+        {
+            // 사용자 컨텍스트가 아님: 있는 그대로 돌려준다.
+        }
         return context == null ? new[] { userAssembly } : context.Assemblies.ToList();
     }
 
@@ -213,18 +247,43 @@ public sealed class UserAssemblies
         TryDeleteDirectory(project.TempDirectory); // 잠금이 남아 실패해도 프로세스 종료 시 다시 시도한다.
     }
 
-    /// <summary>산출물 폴더 전체를 새 임시 폴더로 복사한다(하위 폴더 포함). 원본은 읽기만 한다.</summary>
+    /// <summary>위성(지역화 리소스) 어셈블리 파일 이름 끝.</summary>
+    private const string SatelliteAssemblySuffix = ".resources.dll";
+
+    /// <summary>
+    /// 산출물 폴더를 새 임시 폴더로 복사한다. 원본은 읽기만 한다.
+    /// deps.json이 있는 출력(.NET)은 의존성 경로가 하위 폴더(runtimes 등)를 가리킬 수 있어 하위 폴더까지 전부 복사한다.
+    /// deps.json이 없는 출력(.NET Framework)은 어셈블리를 폴더 바로 아래에서만 찾으므로, 폴더 바로 아래 파일과 위성 어셈블리만 복사한다.
+    /// 이렇게 하지 않으면 앱이 같이 싣는 런타임/스크립트(예: Python 런타임 100MB)까지 복사해 첫 렌더가 느려진다.
+    /// </summary>
     private static string CopyOutputDirectory(string sourceDirectory)
     {
         var target = Path.Combine(Path.GetTempPath(), "xamlviewer-user-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(target);
-        foreach (var directory in Directory.GetDirectories(sourceDirectory, "*", SearchOption.AllDirectories))
+        var hasDepsFile = Directory.GetFiles(sourceDirectory, "*.deps.json", SearchOption.TopDirectoryOnly).Length > 0;
+        if (hasDepsFile)
         {
-            Directory.CreateDirectory(Path.Combine(target, Path.GetRelativePath(sourceDirectory, directory)));
+            foreach (var directory in Directory.GetDirectories(sourceDirectory, "*", SearchOption.AllDirectories))
+            {
+                Directory.CreateDirectory(Path.Combine(target, Path.GetRelativePath(sourceDirectory, directory)));
+            }
+            foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+            {
+                File.Copy(file, Path.Combine(target, Path.GetRelativePath(sourceDirectory, file)), overwrite: true);
+            }
         }
-        foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        else
         {
-            File.Copy(file, Path.Combine(target, Path.GetRelativePath(sourceDirectory, file)), overwrite: true);
+            foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.TopDirectoryOnly))
+            {
+                File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true);
+            }
+            foreach (var file in Directory.GetFiles(sourceDirectory, "*" + SatelliteAssemblySuffix, SearchOption.AllDirectories))
+            {
+                var destination = Path.Combine(target, Path.GetRelativePath(sourceDirectory, file));
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(file, destination, overwrite: true);
+            }
         }
         return target;
     }
