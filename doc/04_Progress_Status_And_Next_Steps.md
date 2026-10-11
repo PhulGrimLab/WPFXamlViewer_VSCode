@@ -1,8 +1,64 @@
-# 04. 진행 상태와 다음 단계 (2026-10-07 기준)
+# 04. 진행 상태와 다음 단계 (2026-10-12 기준: **0절이 최신**, 1절 이후는 2026-10-07 기록)
 
 > 다른 PC에서 작업을 이어갈 때 가장 먼저 읽는 문서. 설계는 [01](./01_Architecture_And_Requirements.md),
 > 계획은 [02](./02_Development_Plan.md), 테스트는 [03](./03_Test_Strategy.md), 환경은 [00](./00_Environment_Setup_Guide.md).
 > 최신 커밋은 `git log`로 확인할 것(이 문서는 커밋 해시를 박지 않는다).
+
+## 0. 최근 작업 인수인계 (2026-10-12 기준, PC 종료 전 기록)
+
+> 이 0절이 가장 최신이다. 1절 이후는 2026-10-07 시점의 기록이라 일부는 낡았다(예: 호스트 테스트 110개 → 현재 145개).
+
+### 0-1. 지금 상태
+- `main` = `origin/main` = **`7ea523c`**(이 문서를 커밋하기 전 기준; 이 문서 커밋이 그 위에 하나 더 얹힌다). 그 외 미커밋 변경은 없다.
+- VS Code에 **설치된 `.vsix`는 `43f58f6` 시점의 코드**다. 그 뒤 `7ea523c`의 두 수정(접두사 델리게이트 첨부 속성, `internal` 타입)은 **설치되지 않았다.** 재설치: `.\tools\package\build_vsix.ps1` → 실행 중인 `XamlRenderHost` 프로세스 종료 → `code --install-extension artifacts\wpf-xaml-live-preview-0.1.0.vsix --force` → VS Code **Reload Window**.
+- 테스트: 호스트 **145개 통과, 2개 건너뜀**(Fluent 골든 R15/R16, 런타임 의존), 확장 **48개 통과**. 호스트는 `dotnet test host\XamlRenderHost.Tests`, 확장은 `cd extension; npm test`.
+- `package.json` 버전은 **0.1.0 그대로**이고 릴리스 태그/GitHub Release는 만들지 않았다. 변경 내용은 `extension/CHANGELOG.md`의 "미출시"에 있다.
+
+### 0-2. 이번 기간(2026-10-11~12)에 한 일
+1. **CodeAtlas 미리보기 오류 해결**: 빌드 산출물이 `.exe`뿐인 WPF 앱(`.dll` 없음) 지원, `pack://application` Setter 제거, 사용자 컨트롤의 이벤트 핸들러 속성 제거, 요청 타임아웃 10→30초, 첫 로드 속도 개선(의존성 지연 로드, 하위 폴더 비복사).
+2. **Tier 0(미신뢰) 폴백**: `{x:Type 미해석타입}`/`TargetType`을 가진 Style·Template 대체. 병합 사전/`App.xaml` 안의 요소 하나가 실패해도 그 요소만 건너뜀(`InlinedElementSkipped`).
+3. **유명 컨트롤 라이브러리 일괄 렌더 검증**(MaterialDesign, MahApps.Metro, WPF UI, HandyControl): 절차와 결과는 **`doc/07_Third_Party_Control_Verification.md`**, 도구는 `tools/verify/render_batch.ps1`(`-FreshHost` 권장). 라이브러리 DLL의 컴파일된 리소스 사전(`pack://…;component/…`) 로드, 호스트가 `Application`을 만들어 `App.xaml` 리소스 적용, 프로젝트 어셈블리 컨텍스트를 수집 불가로 변경(대가: 재빌드마다 메모리 증가).
+4. **WPF UI 강조색 훅**(`HostApplication`의 라이브러리 훅), **창 핸들이 필요한 컨트롤용 숨은 `HwndSource` 폴백**, **호스트 재활용**(응답 `recycle:true` → 확장이 대기 요청이 없을 때 교체).
+5. **코드 리뷰와 보안 수정**(`43f58f6`): 병합 사전 경로 탈출 3종(절대 경로, `..\`, 정션/링크) 차단, Tier 0의 `Application.Resources`/사용자 어셈블리 이름 해석 차단, 어셈블리 이름 검증, 임시 폴더 누수 정리 등. 자세한 내용은 `CHANGELOG`의 "보안 수정"/"코드 리뷰로 고친 것".
+6. **접두사가 붙은 델리게이트 첨부 속성 제거**, **신뢰된 프로젝트의 `internal` 타입 지원**(`XamlXmlReaderSettings.LocalAssembly`)(`7ea523c`).
+
+### 0-3. 라이브러리 일괄 렌더 수치 (파일마다 새 호스트, 오류 없이 렌더된 비율)
+| 저장소 | 처음 | 마지막 **완전** 측정(접두사 속성 수정 포함) |
+|---|---|---|
+| MahApps.Metro | 12/40 | 32/40 |
+| MaterialDesign | 3/54 | 50/54 |
+| WPF UI | 21/86 | 80/86 |
+| 합계(HandyControl 제외) | 36/180 (20%) | **162/180 (90%)** |
+
+- **`internal` 타입 수정까지 포함한 재측정은 PC 종료로 일부만 끝났다**: MahApps는 32/40(변화 없음)으로 확인했고, MaterialDesign과 WPF UI는 끝내지 못했다(결과 파일은 임시 폴더라 사라질 수 있다). 개별로는 MaterialDesign `PopupBox.xaml`, `SmartHint.xaml`이 이제 렌더되는 것을 확인했다(예상: 합계 +2, **미확인**). 다시 측정해야 한다(0-4의 1번).
+- "오류 없이 렌더됨"이 "그림이 맞음"은 아니다. 그림을 직접 열어 본 파일은 소수뿐이다.
+
+### 0-4. 앞으로 할 일 (순서대로)
+1. **재측정 → 문서 → 커밋 → 재설치**: 0-5의 명령으로 MaterialDesign과 WPF UI를 `-FreshHost`로 다시 측정(각 5~6분)하고, `doc/07` 4절 표·남은 실패 목록과 `User_Guide` 7절의 숫자(현재 "160개(89%)"로 낡았음)를 갱신한 뒤 커밋/푸시, 확장 재설치.
+2. **문서 기준 상대 경로 `Icon`**(4건: MahApps `MainWindow`/`CleanWindowDemo`/`StyleSetsDemo`, MaterialDesign `MainWindow`의 `favicon.ico`): `Window Icon="x.ico"`, `Icon="..\x.ico"`를 프로젝트 어셈블리의 `;component/` 경로로 바꾸거나(프로젝트 폴더 기준 경로 계산 필요), 못 풀면 그 속성만 제거하고 경고.
+3. **공유 프로젝트(Shared)의 XAML**(HandyControl 149개 전부 실패): 가장 가까운 `.csproj`에 빌드 산출물이 없으면 같은 폴더 트리를 참조하는 다른 프로젝트의 산출물을 찾는다(`ProjectLocator`).
+4. **남은 개별 실패**: `MetroWindow`의 `Resources` 중복 설정(2), 컴파일된 사전 전용 `x:Shared`(1), WPF UI `SettingsPage`의 `StaticResource` 키(1). 미리보기 대상이 아닌 `App.xaml`/`ResourceDictionary` 루트(7)는 정상이다.
+5. **검토할 위험/미검증**: ① 미리 로드가 신뢰된 폴더의 출력 DLL을 **모두** 로드한다(참조되지 않는 DLL의 로드 시점 코드도 실행) — `deps.json` 기준으로 제한할지 검토 ② 호스트 재활용 임계값(처음 로드 대비 768MB 증가)에 실제로 도달하는 상황은 시험하지 못했다 ③ 라이브러리별 시작 훅은 WPF UI 하나뿐이다.
+6. **기존 남은 항목**: [doc/05](./05_Clean_Machine_Verification.md) 깨끗한 PC 검증(미실행), 웹뷰 마우스 동작 실사용 확인, 첫 GitHub Release([06](./06_Release_Process.md)) — 릴리스 전에 버전/`CHANGELOG` 정리.
+
+### 0-5. 이어서 작업하는 방법 (이 PC 기준)
+- **git**: 이번 세션에 winget으로 설치했다(`C:\Program Files\Git\cmd`). 이미 열린 터미널은 PATH를 못 읽을 수 있으니 새 터미널을 열거나 `$env:Path += ";C:\Program Files\Git\cmd"`. 커밋 메시지는 파일로 저장해 `git commit -F 파일`로 쓴다(PowerShell 5.1에서 `-F -`와 한글 here-string은 실패했다).
+- **샘플 라이브러리**: `C:\Works_PhulGrimLab\WpfControlSamples\{MaterialDesignInXamlToolkit,MahApps.Metro,wpfui,HandyControl}`(**저장소 밖**, 각 `git clone --depth 1`). 없으면 `doc/07` 3-1·3-2대로 다시 받고 데모 앱을 빌드한다. MahApps는 로컬 복사본의 `global.json` `rollForward`를 `latestMajor`로 바꿔 SDK 10으로 빌드했다.
+- **일괄 재측정**(재설치 후 설치본 호스트를 쓰는 예. 재설치 전에 최신 코드를 재려면 `host\XamlRenderHost\bin\Release\net10.0-windows\win-x64\XamlRenderHost.exe`로 바꾸고 `dotnet build host\XamlRenderHost -c Release`를 먼저 한다):
+  ```powershell
+  $exe = "$env:USERPROFILE\.vscode\extensions\phulgrimlab.wpf-xaml-live-preview-0.1.0\bin\host\XamlRenderHost.exe"
+  $r = 'C:\Works_PhulGrimLab\WpfControlSamples'
+  .\tools\verify\render_batch.ps1 -Exe $exe -ProjectDir "$r\MaterialDesignInXamlToolkit\src\MainDemo.Wpf" -OutCsv .\res-mdix.csv -FreshHost
+  .\tools\verify\render_batch.ps1 -Exe $exe -ProjectDir "$r\wpfui\src\Wpf.Ui.Gallery" -OutCsv .\res-wpfui.csv -FreshHost
+  .\tools\verify\render_batch.ps1 -Exe $exe -ProjectDir "$r\MahApps.Metro\src\MahApps.Metro.Samples\MahApps.Metro.Demo" -OutCsv .\res-mahapps.csv -FreshHost
+  ```
+- **임시 폴더**: 일괄 렌더가 `%TEMP%\xamlviewer-user-*` 복사본을 많이 남긴다(수백 MB). 새 호스트가 시작할 때 10분 넘은 것을 지우고, 수동으로 지워도 된다.
+- **CodeAtlas_v0**(별도 프로젝트, `C:\Works_PhulGrimLab\CodeAtlas_v0`): `build_codeatlas.ps1`에 `-Configuration Debug|Release`를 추가하고 `.vscode\tasks.json`에 "Build CodeAtlas (Release)" 작업을 넣었다(그 프로젝트에서는 커밋하지 않았다).
+
+### 0-6. 주의할 점 (이번에 겪은 것)
+- 렌더는 프로세스 전역 `Application` 상태를 쓴다. 호스트(serve)는 직렬이지만 테스트는 병렬이라 `XamlRenderer.RenderGate` 잠금으로 직렬화했다. 새 전역 상태를 추가하면 같은 문제가 생긴다.
+- 보안 방어는 "방어를 끄면 테스트가 실패하는지"까지 확인했다(`RD07`~`RD09`, `T09b`, `T12b`). 새 방어를 넣을 때도 같은 식으로 검증할 것.
+- PowerShell에서 함수 이름 `R`은 `Invoke-History` 별칭과 겹친다. 일괄 렌더 시험에서 `-ProjectDir` 경로 오타(`WpfControlSamples` 누락)로 측정이 즉시 끝난 적이 있으니, 결과가 너무 빨리 끝나면 경로부터 의심할 것.
 
 ## 1. 한 줄 요약
 **M0~M6 구현 완료. 남은 것: ① [doc/05](./05_Clean_Machine_Verification.md) 깨끗한 PC 검증(미실행) ② 웹뷰 마우스 동작(드래그/휠/클릭)을 실제로 써 보기 ③ 첫 GitHub Release 생성([06](./06_Release_Process.md), 사용자 확인 후).** VS Code 확장은 `Open Preview` 명령, 자동 갱신, Problems, 경고 표시까지 동작하며, 호스트는 실제 프로젝트 XAML(x:Class/이벤트/Window 루트/병합 사전/사용자 타입 자리표시자)을 렌더한다. **신뢰된 워크스페이스에서는 프로젝트 빌드 DLL의 사용자 컨트롤이 실제로 그려진다(빌드 산출물이 있어야 함)**(02 문서 M4/M4B 결과의 제한 목록 참고).
