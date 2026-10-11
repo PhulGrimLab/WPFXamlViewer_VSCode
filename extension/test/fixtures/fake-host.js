@@ -8,6 +8,7 @@
 //   garbage         → JSON이 아닌 줄 + 짝 없는 id 응답을 먼저 보낸 뒤 정상 응답
 //   split           → 응답 한 줄을 두 조각으로 나눠 보냄
 //   render          → params.ms 후 ok {png, width, height, elements, warnings, seq(호스트가 받은 render 순번)}
+//   recycle         → ok {recycle:true, pid} (호스트 재시작 요청)
 //   shutdown        → ok 후 종료 코드 0
 const readline = require('readline');
 
@@ -52,6 +53,10 @@ rl.on('line', (line) => {
                 (params && params.ms) || 0);
             break;
         }
+        case 'recycle':
+            // 메모리가 쌓였다며 재시작을 요청하는 응답: result.recycle=true 와 이 호스트의 pid.
+            send({ id, ok: true, result: { recycle: true, pid: process.pid } });
+            break;
         case 'shutdown':
             send({ id, ok: true, result: {} });
             setTimeout(() => process.exit(0), 10);

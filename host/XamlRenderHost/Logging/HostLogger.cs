@@ -41,6 +41,9 @@ public static class LogIds
     /// <summary>Tier 결정(0/1)과 이유. 결정이 바뀔 때만 남긴다.</summary>
     public const string TierDecided = "H023";
 
+    /// <summary>메모리가 임계값을 넘어 렌더 응답에 recycle(호스트 재시작 요청)을 실었다.</summary>
+    public const string RecycleRequested = "H024";
+
     /// <summary>큐가 가득 차 로그를 버렸음을 알리는 내부 로그(doc/01 5절 정책 보강).</summary>
     public const string LogsDropped = "H090";
 }

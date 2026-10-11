@@ -134,6 +134,8 @@ export class HostClient {
     private _stdoutBuffer = '';
     private _stderrTail = '';
     private _disposed = false;
+    /** 호스트가 응답에 `recycle: true`를 실어 보냈다(메모리 누적). 대기 요청이 없을 때 호스트를 새로 띄운다. */
+    private _recycleWhenIdle = false;
 
     // renderLatest 상태: 동시에 호스트로 나가는 render는 최대 1개, 대기는 가장 최신 1개만 유지한다.
     private _latestSeq = 0;
@@ -160,6 +162,8 @@ export class HostClient {
         } else {
             // 정상: 아래에서 계속.
         }
+
+        this._retireHostIfRecycleDue();
 
         let child: ChildProcessWithoutNullStreams;
         try {
@@ -265,6 +269,25 @@ export class HostClient {
         });
     }
 
+    /**
+     * 호스트가 재시작을 요청했고(recycle) 처리 중인 요청이 하나도 없으면, 그 호스트를 정상 종료(shutdown)시키고 분리한다.
+     * 다음 {@link _ensureStarted}가 새 호스트를 띄운다. 요청이 처리 중이면 아무것도 하지 않는다(그 요청의 응답을 받아야 하므로) — 다음 기회에 다시 확인한다.
+     */
+    private _retireHostIfRecycleDue(): void {
+        const child = this._child;
+        if (!this._recycleWhenIdle || this._pending.size > 0 || !child) {
+            return;
+        } else {
+            this._recycleWhenIdle = false;
+            this._child = undefined; // exit 핸들러가 "예기치 않은 종료"로 오인하지 않도록 먼저 분리한다.
+        }
+
+        this._options.log('Info', LogId.HostRecycled, `pid=${child.pid ?? 'unknown'}`);
+        const killTimer = setTimeout(() => child.kill(), SHUTDOWN_GRACE_MS);
+        child.once('exit', () => clearTimeout(killTimer));
+        child.stdin.write(JSON.stringify({ id: SHUTDOWN_REQUEST_ID, method: 'shutdown' }) + '\n');
+    }
+
     /** 호스트가 없으면 시작한다. 이미 있으면 그대로 돌려준다. */
     private _ensureStarted(): ChildProcessWithoutNullStreams {
         if (this._child) {
@@ -280,6 +303,7 @@ export class HostClient {
         });
         this._stdoutBuffer = '';
         this._stderrTail = '';
+        this._recycleWhenIdle = false; // 재시작 요청은 그것을 보낸 호스트에만 해당한다(새 호스트를 곧바로 교체하지 않는다).
 
         child.stdout.setEncoding('utf8');
         child.stdout.on('data', (chunk: string) => this._onStdout(child, chunk));
@@ -341,6 +365,11 @@ export class HostClient {
         clearTimeout(pending.timer);
         this._pending.delete(message.id);
         if (message.ok === true) {
+            if ((message.result as { recycle?: unknown } | undefined)?.recycle === true) {
+                this._recycleWhenIdle = true; // 응답은 정상 전달하고, 다음 요청 때(대기 요청이 없으면) 호스트를 바꾼다.
+            } else {
+                // 재시작 요청 없음.
+            }
             pending.resolve(message.result);
         } else {
             const e = message.error ?? {};
@@ -361,6 +390,7 @@ export class HostClient {
         this._options.log('Warn', LogId.RequestTimeout, `id=${id} method=${pending.method} elapsedMs=${elapsed}`);
         const child = this._child;
         this._child = undefined; // exit 핸들러가 "예기치 않은 종료"로 오인하지 않도록 먼저 분리한다.
+        this._recycleWhenIdle = false;
         this._rejectAllPending(new HostTimeoutError(id, elapsed));
         child?.kill();
     }
@@ -371,6 +401,7 @@ export class HostClient {
             return; // 타임아웃/dispose로 이미 분리한 호스트.
         } else {
             this._child = undefined;
+            this._recycleWhenIdle = false;
         }
 
         const detail = error instanceof HostCrashedError ? `exit=${error.exitCode} signal=${error.signal}` : error.message;

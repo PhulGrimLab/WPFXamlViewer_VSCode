@@ -85,19 +85,30 @@ public static class XamlRenderer
             // 정상 입력: 계속 진행.
         }
 
-        var tier = ProjectTier.Resolve(request.AllowProjectAssemblies, request.FilePath);
-        var schema = ProjectTier.CreateSchemaContext(tier);
-        try
+        // 렌더는 프로세스 전역 상태(`Application`과 그 Resources, 사용자 어셈블리 이름 해석 허용 표시)를 쓴다. 호스트(serve)는 렌더를 STA 스레드 하나에서 직렬로
+        // 처리해 문제가 없지만, 라이브러리로 여러 스레드에서 호출되면(테스트의 병렬 실행 등) 한 렌더의 `Application.Resources` 설정/비우기가 다른 렌더 도중에 끼어든다.
+        // 그래서 렌더 전체를 하나의 잠금으로 직렬화한다(같은 스레드의 재진입은 허용).
+        lock (RenderGate)
         {
-            return RenderCore(request, tier, schema, tagElements: true);
-        }
-        catch (XamlRenderException ex) when (ex.Code == RenderErrorCodes.XamlParse && ex.Line.HasValue)
-        {
-            // HitMap용 Uid 태그가 같은 줄의 열 위치를 밀어 놓았다. 오류 위치(특히 열)를 원본 기준으로 정확히 보고하려고
-            // 태그 없이 한 번 더 파싱한다(오류 경로에서만 드는 비용). 뜻밖에 성공하면 그 결과(HitMap 없음)를 돌려준다.
-            return RenderCore(request, tier, schema, tagElements: false);
+            var tier = ProjectTier.Resolve(request.AllowProjectAssemblies, request.FilePath);
+            var schema = ProjectTier.CreateSchemaContext(tier);
+            // 보안: 신뢰된(Tier 1) 렌더 구간에서만 사용자 어셈블리의 이름 해석을 허용한다(Tier 0 렌더가 앞서 로드된 사용자 어셈블리를 이름으로 불러 쓰지 못하게).
+            using var trustedResolution = tier.Tier == 1 ? Projects.UserAssemblies.BeginTrustedResolution() : null;
+            try
+            {
+                return RenderCore(request, tier, schema, tagElements: true);
+            }
+            catch (XamlRenderException ex) when (ex.Code == RenderErrorCodes.XamlParse && ex.Line.HasValue)
+            {
+                // HitMap용 Uid 태그가 같은 줄의 열 위치를 밀어 놓았다. 오류 위치(특히 열)를 원본 기준으로 정확히 보고하려고
+                // 태그 없이 한 번 더 파싱한다(오류 경로에서만 드는 비용). 뜻밖에 성공하면 그 결과(HitMap 없음)를 돌려준다.
+                return RenderCore(request, tier, schema, tagElements: false);
+            }
         }
     }
+
+    /// <summary>렌더 전체를 직렬화하는 잠금(프로세스 전역 `Application` 상태 보호). <see cref="Render"/> 참고.</summary>
+    private static readonly object RenderGate = new();
 
     /// <summary>전처리 → 파싱 → 레이아웃 → PNG/HitMap의 본체. tagElements=true면 HitMap용 Uid 태그를 붙인다.</summary>
     private static RenderResult RenderCore(RenderRequest request, ProjectTierInfo tier, System.Xaml.XamlSchemaContext? schema, bool tagElements)
@@ -119,7 +130,8 @@ public static class XamlRenderer
         }
         else
         {
-            // Tier 0: 프로젝트 어셈블리가 없어 앱 수준 리소스를 만들지 않는다.
+            // Tier 0: 프로젝트 어셈블리가 없어 앱 수준 리소스를 만들지 않고, 앞서 신뢰된 렌더가 올려 둔 것도 쓰지 못하게 비운다.
+            HostApplication.ClearResources();
         }
         var (root, finalXaml) = ParseWithUserFailureRecovery(preprocessed.Xaml, schema, warnings);
         if (tier.Tier == 0 && warnings.Any(w => w.Code == WarningCodes.PlaceholderUsed))
@@ -137,7 +149,28 @@ public static class XamlRenderer
 
         try
         {
-            var result = RenderToPng(root, width, height, request.Dpi, preprocessed.Elements);
+            RenderResult result;
+            try
+            {
+                result = RenderToPng(root, width, height, request.Dpi, preprocessed.Elements);
+            }
+            catch (Exception firstFailure) when (firstFailure is not XamlRenderException)
+            {
+                // 일부 컨트롤은 템플릿을 적용할 때 PresentationSource(창 핸들)를 요구한다(`PresentationSource.FromVisual(this)!` 등).
+                // 화면 밖에서 그리는 루트에는 없어서 NullReferenceException 등이 난다. 한 번만, 숨은 메시지 전용 창에 붙여 다시 그려 본다.
+                // 그것도 실패하면 처음 오류를 그대로 보고한다(기본 경로의 동작/메시지를 바꾸지 않는다).
+                var retried = TryRenderWithPresentationSource(preprocessed.Xaml, schema, width, height, request.Dpi, preprocessed.Elements, out var retryNote);
+                if (retried == null)
+                {
+                    throw;
+                }
+                else
+                {
+                    result = retried;
+                    warnings.Add(new RenderWarning(WarningCodes.RenderedWithHiddenWindow,
+                        $"창 핸들이 필요한 컨트롤이 있어 숨은 창에 붙여 다시 그렸습니다({firstFailure.GetType().Name}).{(retryNote == null ? string.Empty : " 지연 처리 예외: " + retryNote)}", null, null));
+                }
+            }
             if (result.Elements is { Count: >= HitMap.MaxElements })
             {
                 warnings.Add(new RenderWarning(WarningCodes.HitMapTruncated, $"요소가 많아 클릭 매핑을 {HitMap.MaxElements}개로 제한했습니다.", null, null));
@@ -396,6 +429,79 @@ public static class XamlRenderer
         else
         {
             return requested;
+        }
+    }
+
+    /// <summary>메시지 전용 창의 부모 핸들(HWND_MESSAGE). 화면에 보이지 않는 창이다.</summary>
+    private static readonly IntPtr HwndMessage = new(-3);
+
+    /// <summary>
+    /// 루트를 새로 파싱해 숨은 메시지 전용 `HwndSource`에 붙인 채로 렌더한다(PresentationSource가 필요한 컨트롤용 폴백).
+    /// 성공하면 결과, 파싱이나 렌더가 다시 실패하면 null(호출자가 처음 오류를 보고한다). 창은 항상 정리한다.
+    /// </summary>
+    private static RenderResult? TryRenderWithPresentationSource(string xaml, System.Xaml.XamlSchemaContext? schema, double? width, double? height, double dpi, IReadOnlyList<SourceElement> sources, out string? note)
+    {
+        note = null;
+        System.Windows.Interop.HwndSource? source = null;
+
+        // 숨은 창에 붙인 뒤에는 WPF가 지연 레이아웃을 창/디스패처 콜백에서 돌린다. 거기서 난 예외는 처리하지 않으면 프로세스를 죽이므로(0xC000041D)
+        // 이 구간에서만 가로채 "실패"로 취급한다(처리기는 끝나면 반드시 뗀다).
+        Exception? deferredFailure = null;
+        var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+        System.Windows.Threading.DispatcherUnhandledExceptionEventHandler handler = (_, e) =>
+        {
+            deferredFailure ??= e.Exception;
+            e.Handled = true;
+        };
+        dispatcher.UnhandledException += handler;
+        try
+        {
+            var (root, _) = ParseWithUserFailureRecovery(xaml, schema, new List<RenderWarning>());
+            // SizeToContent는 쓰지 않는다: RootVisual을 붙는 순간 창 메시지 콜백 안에서 레이아웃이 동기로 돌아 예외가 잡히지 않는다.
+            // 레이아웃은 RenderToPng가 (이 try 안에서) 직접 돌린다. 창이 1x1이어도 FrameworkElement는 자기 DesiredSize 아래로 줄지 않는다.
+            source = new System.Windows.Interop.HwndSource(new System.Windows.Interop.HwndSourceParameters("XamlViewerHost")
+            {
+                ParentWindow = HwndMessage,
+                WindowStyle = 0,
+                Width = 1,
+                Height = 1,
+            });
+            source.RootVisual = root;
+            var result = RenderToPng(root, width, height, dpi, sources);
+            // 화면에 붙이면 Loaded 같은 이벤트가 발생해 앱 코드의 핸들러가 예외를 낼 수 있다(앱 상태가 없어서). 그림은 이미 그려졌으므로 결과를 돌려주고 경고로 알린다.
+            note = deferredFailure == null ? null : $"{deferredFailure.GetType().Name} (Loaded 등 지연 처리 중, 무시함)";
+            return result;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                if (source != null)
+                {
+                    source.RootVisual = null;
+                    source.Dispose();
+                }
+                else
+                {
+                    // 창을 만들지 못함: 정리할 것 없음.
+                }
+
+                // 창을 정리하면 Unloaded 같은 지연 콜백이 디스패처 큐에 쌓인다. 처리기를 떼기 전에(= 예외를 가로챌 수 있는 동안) 비운다.
+                // 그러지 않으면 다음 렌더의 큐 처리 때 앱 코드의 예외가 처리기 없이 터져 호스트가 죽는다.
+                dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+            }
+            catch (Exception)
+            {
+                // 정리 중 실패는 무시한다(창은 프로세스 종료 때 사라진다).
+            }
+            finally
+            {
+                dispatcher.UnhandledException -= handler;
+            }
         }
     }
 

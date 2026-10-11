@@ -91,27 +91,43 @@ public static class ProjectLocator
         return null;
     }
 
-    /// <summary>`&lt;AssemblyName&gt;` 속성이 있으면 그 값, 없거나 읽을 수 없으면 프로젝트 파일 이름(확장자 제외).</summary>
+    /// <summary>어셈블리 이름에 들어가면 안 되는 문자: XAML 속성/URI에 이름을 끼워 넣을 때 따옴표·꺾쇠·구분자가 구조를 깨거나 경로를 바꿀 수 있다.</summary>
+    private static readonly char[] UnsafeAssemblyNameCharacters = { '"', '\'', '<', '>', '&', ';', '=', ',', '\\', '/', ':', '*', '?', '|', '\r', '\n', '\t', '\0' };
+
+    /// <summary>
+    /// 어셈블리 이름이 XAML 텍스트/pack URI/로드 경로에 그대로 쓰여도 안전한가(비어 있지 않고, 길이 제한 이내이며, 위험 문자가 없다).
+    /// 프로젝트 파일(`&lt;AssemblyName&gt;`)이나 XAML(`assembly=…`, `;component/`)이 준 문자열이라 검증 없이 쓰지 않는다.
+    /// </summary>
+    public static bool IsSafeAssemblyName(string? name)
+        => !string.IsNullOrWhiteSpace(name) && name.Length <= MaxAssemblyNameLength && name.IndexOfAny(UnsafeAssemblyNameCharacters) < 0 && !name.Contains("..", StringComparison.Ordinal);
+
+    /// <summary>어셈블리 이름 최대 길이(비정상적으로 긴 입력 차단).</summary>
+    private const int MaxAssemblyNameLength = 256;
+
+    /// <summary>`&lt;AssemblyName&gt;` 속성이 있으면 그 값(안전할 때만), 없거나 읽을 수 없거나 안전하지 않으면 프로젝트 파일 이름(확장자 제외).</summary>
     private static string ReadAssemblyName(string projectFile)
     {
         try
         {
-            var declared = XDocument.Load(projectFile).Descendants()
+            // 프로젝트 파일에는 DTD가 필요 없다: 엔티티 확장 폭주(billion laughs)를 막으려고 DTD를 금지하고 읽는다.
+            using var reader = System.Xml.XmlReader.Create(projectFile, new System.Xml.XmlReaderSettings { DtdProcessing = System.Xml.DtdProcessing.Prohibit });
+            var declared = XDocument.Load(reader).Descendants()
                 .FirstOrDefault(e => e.Name.LocalName == "AssemblyName")?.Value.Trim();
-            if (!string.IsNullOrEmpty(declared))
+            if (IsSafeAssemblyName(declared))
             {
-                return declared;
+                return declared!;
             }
             else
             {
-                // 선언 없음: 기본값 사용.
+                // 선언 없음 또는 위험 문자 포함: 기본값 사용.
             }
         }
         catch (Exception ex) when (ex is IOException or System.Xml.XmlException or UnauthorizedAccessException)
         {
             // 읽기/파싱 실패: 기본값 사용.
         }
-        return Path.GetFileNameWithoutExtension(projectFile);
+        var fallback = Path.GetFileNameWithoutExtension(projectFile);
+        return IsSafeAssemblyName(fallback) ? fallback : "UnsafeAssemblyName";
     }
 
     private static string? FindNewestAssembly(string binDirectory, string fileName)

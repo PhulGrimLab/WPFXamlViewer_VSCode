@@ -207,6 +207,80 @@ public class PreprocessorTests
         CollectionAssert.Contains(Codes(result), WarningCodes.DictionaryUnavailable);
     }
 
+    private static string OutsideDictionary => $"<ResourceDictionary {Ns} xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"><SolidColorBrush x:Key=\"Leak\" Color=\"Red\"/></ResourceDictionary>";
+
+    [TestMethod]
+    public void RD07_AbsolutePathSource_IsNeverRead()
+    {
+        // 보안: Source에 절대 경로를 쓰면 Path.Combine이 기준 폴더를 무시한다. 문서 밖(다른 폴더)의 파일을 읽어 인라인하면 안 된다.
+        var outside = Path.Combine(Path.GetTempPath(), "xamlviewer-outside-" + Guid.NewGuid().ToString("N") + ".xaml");
+        File.WriteAllText(outside, OutsideDictionary);
+        try
+        {
+            var result = RenderWithFiles(new() { ["Main.xaml"] = ButtonWith($"<ResourceDictionary Source=\"{outside}\"/>") }, "Main.xaml");
+            CollectionAssert.Contains(Codes(result), WarningCodes.DictionaryUnavailable, "절대 경로 사전은 읽지 않고 '찾을 수 없음'으로 처리해야 한다");
+        }
+        finally
+        {
+            File.Delete(outside);
+        }
+    }
+
+    [TestMethod]
+    public void RD08_DotDotEscapingTheProject_IsNeverRead()
+    {
+        // 보안: `..\`로 프로젝트(.csproj가 있는 폴더) 밖의 파일을 읽으면 안 된다. 같은 프로젝트 안의 `..`는 허용한다.
+        var main = ButtonWith("<ResourceDictionary Source=\"../outside.xaml\"/>\n<ResourceDictionary Source=\"../Shared/inside.xaml\"/>", "Height=\"20\""); // Width는 비워 둔다(사전의 스타일이 77을 준다)
+        var result = RenderWithFiles(new()
+        {
+            ["Proj/Proj.csproj"] = "<Project/>",
+            ["Proj/Views/Main.xaml"] = main,
+            ["Proj/Shared/inside.xaml"] = WideButtonDictionary,
+            ["outside.xaml"] = OutsideDictionary,
+        }, "Proj/Views/Main.xaml");
+        Assert.AreEqual(1, Codes(result).Count(c => c == WarningCodes.DictionaryUnavailable), "프로젝트 밖(../outside.xaml)만 거부되고 프로젝트 안(../Shared)은 읽혀야 한다");
+        Assert.AreEqual(77, result.PixelWidth, "프로젝트 안의 사전은 인라인되어 스타일이 적용되어야 한다");
+    }
+
+    [TestMethod]
+    public void RD09_JunctionInsideProjectPointingOutside_IsNeverRead()
+    {
+        // 보안: 프로젝트 안에 있는 정션(디렉터리 링크)이 밖을 가리켜도 그 경로로 밖의 파일을 읽으면 안 된다(경계 검사는 문자열 경로 기준이라 링크를 별도로 막는다).
+        var baseDir = Path.Combine(Path.GetTempPath(), "xamlviewer-junction-" + Guid.NewGuid().ToString("N"));
+        var projectDir = Path.Combine(baseDir, "Proj");
+        var outsideDir = Path.Combine(baseDir, "Outside");
+        Directory.CreateDirectory(projectDir);
+        Directory.CreateDirectory(outsideDir);
+        File.WriteAllText(Path.Combine(projectDir, "Proj.csproj"), "<Project/>");
+        File.WriteAllText(Path.Combine(outsideDir, "secret.xaml"), OutsideDictionary);
+        var main = Path.Combine(projectDir, "Main.xaml");
+        File.WriteAllText(main, ButtonWith("<ResourceDictionary Source=\"Link/secret.xaml\"/>"));
+        var junction = Path.Combine(projectDir, "Link");
+        try
+        {
+            using (var mklink = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/c mklink /J \"{junction}\" \"{outsideDir}\"") { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true })!)
+            {
+                mklink.StandardOutput.ReadToEnd();
+                mklink.WaitForExit();
+            }
+            if (!Directory.Exists(junction))
+            {
+                Assert.Inconclusive("이 환경에서는 정션을 만들 수 없어 시험하지 못했다.");
+            }
+
+            var result = StaRunner.Run(() => XamlRenderer.Render(new RenderRequest(File.ReadAllText(main), FilePath: main)));
+            CollectionAssert.Contains(Codes(result), WarningCodes.DictionaryUnavailable, "링크를 지나는 경로의 사전은 읽지 않아야 한다");
+        }
+        finally
+        {
+            if (Directory.Exists(junction))
+            {
+                Directory.Delete(junction); // 링크만 지운다(재귀 삭제하면 대상 폴더까지 지워질 수 있다).
+            }
+            Directory.Delete(baseDir, recursive: true);
+        }
+    }
+
     private static string BadSetterStyle => "<Style TargetType=\"Button\"><Setter Property=\"Width\" Value=\"abc\"/></Style>";
 
     [TestMethod]

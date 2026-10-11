@@ -58,6 +58,9 @@ public static class WarningCodes
 
     /// <summary>병합 사전/앱 리소스 안의 요소가 파싱에 실패해 그 요소만 건너뛰고 나머지를 그렸다.</summary>
     public const string InlinedElementSkipped = "InlinedElementSkipped";
+
+    /// <summary>PresentationSource(창 핸들)가 필요한 컨트롤 때문에 처음 렌더가 실패해, 숨은 창에 붙여 다시 그렸다.</summary>
+    public const string RenderedWithHiddenWindow = "RenderedWithHiddenWindow";
 }
 
 /// <summary>
@@ -878,13 +881,37 @@ public static partial class XamlPreprocessor
         }
 
         relative = relative.TrimStart('/', '\\').Replace('/', Path.DirectorySeparatorChar);
-        var directory = Path.GetDirectoryName(Path.GetFullPath(filePath));
-        for (var level = 0; level <= MaxAncestorSearchLevels && directory != null; level++)
+
+        // 보안: 문서(신뢰하지 않은 워크스페이스일 수 있다)가 임의의 로컬 파일을 읽게 만들 수 없게 한다.
+        // ① 드라이브/절대 경로(`C:\…`)는 Path.Combine이 기준 폴더를 무시하고 그 경로를 그대로 쓰므로 거부한다(UNC는 위 TrimStart로 상대 경로가 된다).
+        // ② `..`로 프로젝트 경계를 벗어나는 경로는 거부한다(경계 안의 `..`는 허용: 형제 폴더의 Styles 등).
+        if (Path.IsPathRooted(relative) || relative.Contains(':'))
         {
-            var candidate = Path.Combine(directory, relative);
-            if (File.Exists(candidate))
+            return null;
+        }
+        else
+        {
+            // 상대 경로: 경계 확인으로 진행.
+        }
+
+        var documentDirectory = Path.GetDirectoryName(Path.GetFullPath(filePath));
+        if (documentDirectory == null)
+        {
+            return null;
+        }
+        else
+        {
+            // 문서 폴더 있음.
+        }
+
+        var boundary = FindContainmentRoot(documentDirectory);
+        var directory = documentDirectory;
+        for (var level = 0; level <= MaxAncestorSearchLevels && directory != null && IsInsideDirectory(boundary, directory); level++)
+        {
+            var candidate = Path.GetFullPath(Path.Combine(directory, relative));
+            if (IsInsideDirectory(boundary, candidate) && File.Exists(candidate) && !PassesThroughLink(boundary, candidate))
             {
-                return Path.GetFullPath(candidate);
+                return candidate;
             }
             else
             {
@@ -892,6 +919,36 @@ public static partial class XamlPreprocessor
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// 후보 파일 자신이나, 경계 폴더부터 그 파일까지의 폴더 중 하나가 링크(정션/심볼릭 링크 등 재분석 지점)인가.
+    /// 경계 검사는 문자열 경로 기준이라 프로젝트 안의 링크가 밖을 가리키면 그대로 통과하므로, 링크를 지나가는 경로는 읽지 않는다.
+    /// 확인하지 못하면(권한/IO 오류) 안전하게 링크로 취급한다.
+    /// </summary>
+    private static bool PassesThroughLink(string boundary, string candidate)
+    {
+        try
+        {
+            var root = Path.GetFullPath(boundary).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var current = candidate;
+            while (current != null && current.Length > root.Length)
+            {
+                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                {
+                    return true;
+                }
+                else
+                {
+                    current = Path.GetDirectoryName(current);
+                }
+            }
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return true;
+        }
     }
 
     // ---- 텍스트 위치/편집 도우미 ----

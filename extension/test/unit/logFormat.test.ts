@@ -22,6 +22,7 @@ describe('formatLogLine', () => {
             HostCrashed: 'E012',
             RequestDiscarded: 'E013',
             HostOutputIgnored: 'E014',
+            HostRecycled: 'E015',
         });
     });
 });

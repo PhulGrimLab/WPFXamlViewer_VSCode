@@ -79,6 +79,51 @@ public static partial class XamlPreprocessor
         return dictionaryXml == null ? xaml : InsertMergedDictionary(xaml, dictionaryXml);
     }
 
+    /// <summary>프로젝트/저장소의 루트를 알리는 파일(`*.csproj`, `*.sln`, `*.slnx`) 또는 폴더(`.git`).</summary>
+    private static readonly string[] ContainmentRootFilePatterns = { "*.csproj", "*.sln", "*.slnx" };
+
+    /// <summary>
+    /// 문서가 읽을 수 있는 파일의 경계 폴더를 찾는다: 문서 폴더에서 위로 올라가며 프로젝트/솔루션 파일이나 `.git`이 있는 가장 가까운 폴더.
+    /// 없으면 문서 폴더 자신이다(그러면 문서 폴더 밖은 읽지 않는다). 병합 사전/App.xaml 탐색이 이 경계를 벗어나지 못하게 하는 보안 장치다.
+    /// </summary>
+    private static string FindContainmentRoot(string documentDirectory)
+    {
+        var directory = documentDirectory;
+        for (var level = 0; level <= MaxContainmentSearchLevels && directory != null; level++)
+        {
+            try
+            {
+                if (Directory.Exists(Path.Combine(directory, ".git"))
+                    || ContainmentRootFilePatterns.Any(pattern => Directory.EnumerateFiles(directory, pattern).Any()))
+                {
+                    return directory;
+                }
+                else
+                {
+                    // 이 폴더는 루트가 아님: 위로.
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 읽을 수 없는 폴더: 위로 계속.
+            }
+            directory = Path.GetDirectoryName(directory);
+        }
+        return documentDirectory;
+    }
+
+    /// <summary>문서 폴더에서 경계를 찾으려고 올라가는 최대 단계.</summary>
+    private const int MaxContainmentSearchLevels = 12;
+
+    /// <summary><paramref name="path"/>가 <paramref name="directory"/> 자신이거나 그 아래인가(정규화된 전체 경로 기준, 대소문자 무시).</summary>
+    private static bool IsInsideDirectory(string directory, string path)
+    {
+        var root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var target = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return target.Equals(root, StringComparison.OrdinalIgnoreCase)
+            || target.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// 문서 폴더에서 위로 올라가며 가장 가까운 App.xaml을 찾는다. .csproj가 있는 폴더는 프로젝트 경계라서
     /// 그 폴더까지만 본다(다른 프로젝트의 App.xaml을 쓰지 않기 위해). 못 찾으면 null.
@@ -86,7 +131,8 @@ public static partial class XamlPreprocessor
     private static string? FindApplicationFile(string filePath)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(filePath));
-        for (var level = 0; level <= MaxAncestorSearchLevels && directory != null; level++)
+        var boundary = directory == null ? null : FindContainmentRoot(directory);
+        for (var level = 0; level <= MaxAncestorSearchLevels && directory != null && boundary != null && IsInsideDirectory(boundary, directory); level++)
         {
             var candidate = Path.Combine(directory, ApplicationFileName);
             if (File.Exists(candidate))

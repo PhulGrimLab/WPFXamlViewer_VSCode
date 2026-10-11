@@ -147,7 +147,7 @@ public sealed class RequestHandler
                 $"id={id?.ToJsonString() ?? "null"} ms={stopwatch.ElapsedMilliseconds} size={result.PixelWidth}x{result.PixelHeight} elements={result.Elements?.Count ?? 0} warnings={warnings.Count}");
             LogPlaceholders(id, warnings);
             LogProjectTier(id, result.Project, warnings);
-            return Ok(id, new JsonObject
+            var response = new JsonObject
             {
                 ["png"] = Convert.ToBase64String(result.Png),
                 ["width"] = result.PixelWidth,
@@ -159,15 +159,47 @@ public sealed class RequestHandler
                     ["tier"] = result.Project.Tier,
                     ["reason"] = result.Project.Reason,
                 },
-            });
+            };
+            if (UserAssemblies.Instance.ShouldRecycle())
+            {
+                // 메모리가 많이 쌓였다: 확장에 호스트를 새로 띄워 달라고 알린다(확장이 대기 요청이 없을 때 정상 종료 후 재시작).
+                response["recycle"] = true;
+                using var self = Process.GetCurrentProcess(); // 핸들을 쥐는 객체라 바로 해제한다.
+                _logger.Log(LogLevel.Info, LogIds.RecycleRequested, $"id={id?.ToJsonString() ?? "null"} privateMB={self.PrivateMemorySize64 / (1024 * 1024)}");
+            }
+            else
+            {
+                // 재시작 불필요.
+            }
+            return Ok(id, response);
         }
         catch (XamlRenderException ex)
         {
             _logger.Log(LogLevel.Warn, LogIds.RenderFailed,
                 $"id={id?.ToJsonString() ?? "null"} code={ex.Code} line={ex.Line?.ToString() ?? "-"} col={ex.Column?.ToString() ?? "-"}");
+            if (ex.InnerException != null)
+            {
+                // 원인 조사용(Debug 수준): 가장 안쪽 예외의 **형식과 스택만**. 예외 메시지는 파서가 XAML 본문 조각을 담을 수 있어 싣지 않는다(본문은 로그에 남기지 않는다).
+                // 한 줄로 만들고 길이를 제한한다.
+                var innermost = ex.InnerException;
+                while (innermost.InnerException != null)
+                {
+                    innermost = innermost.InnerException;
+                }
+                var stack = (innermost.GetType().FullName + " | " + innermost.StackTrace).Replace("\r", " ").Replace("\n", " | ");
+                _logger.Log(LogLevel.Debug, LogIds.RenderFailed,
+                    $"id={id?.ToJsonString() ?? "null"} cause={(stack.Length <= MaxCauseLogLength ? stack : stack[..MaxCauseLogLength] + "…")}");
+            }
+            else
+            {
+                // 내부 예외 없음: 위 로그가 전부다.
+            }
             return Error(id, ex.Code, ex.Message, ex.Line, ex.Column);
         }
     }
+
+    /// <summary>렌더 실패 원인 로그(스택 포함)의 최대 길이.</summary>
+    private const int MaxCauseLogLength = 1800;
 
     /// <summary>H013 로그에 남기는 자리표시자 타입 최대 개수(로그 폭주 방지).</summary>
     private const int MaxPlaceholderLogEntries = 5;

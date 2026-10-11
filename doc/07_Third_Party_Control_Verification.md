@@ -62,9 +62,9 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 |---|---|---|---|
 | MahApps.Metro | 40 | 32 (80%) | 12 |
 | MaterialDesignInXamlToolkit | 54 | 48 (89%) | 3 |
-| WPF UI (Gallery) | 86 | 75 (87%) | 21 |
+| WPF UI (Gallery) | 86 | 80 (93%) | 21 |
 | HandyControl | 149 | 측정 안 함 | 0 |
-| **합계(HandyControl 제외)** | **180** | **155 (86%)** | 36 (20%) |
+| **합계(HandyControl 제외)** | **180** | **160 (89%)** | 36 (20%) |
 
 - HandyControl은 XAML이 `Shared` 프로젝트에 있어 **가장 가까운 `.csproj`(공유 프로젝트)에 빌드 산출물이 없다.** 데모 앱 폴더에는 XAML이 0개이고, 공유 폴더의 파일은 Tier 1이 되지 않아 이번 재측정에서 제외했다(5절 3번).
 - "오류 없이 그려졌는가"만 센 값이다. 그림이 맞는지는 일부만(아래) 눈으로 확인했다.
@@ -79,34 +79,45 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 6. **같은 개수의 인자를 받는 생성자가 여러 개인 마크업 확장**(WPF UI의 `{ui:SymbolIcon …}` 등): 스키마 컨텍스트에서 허용했다(`SupportMarkupExtensionsWithDuplicateArity`).
 7. **신뢰하지 않은 문서(Tier 0)가 앞서 로드된 사용자 타입을 쓰는 문제**: 어셈블리를 수집 불가로 바꾸면서, 같은 프로세스에서 앞서 신뢰된 프로젝트를 로드했을 때 그 타입이 신뢰하지 않은 문서에서도 해석될 수 있게 되어(테스트 `T02`가 실패) 막았다. Tier 0에서는 사용자 컨텍스트에 로드된 타입도 해석 불가(자리표시자)로 취급한다.
 
-**눈으로 확인한 그림**(결과 PNG를 직접 열어 봄, 파일 3개뿐이다. 나머지는 "오류 없음"만 확인했다):
+8. **WPF UI 강조색(Accent/Primary) 요소가 비어 보이던 문제**: `AccentButtonBackground`는 `Color="{DynamicResource AccentFillColorDefault}"`인데 그 키는 앱 시작 코드(`ApplicationAccentColorManager.ApplySystemAccent()`)가 `UiApplication.Current.Resources`에 쓴다. 호스트는 앱을 실행하지 않아 비었고, 훅을 호출해도 안 채워졌다. 이유는 `UiApplication`이 **스레드 정적으로 캐시**되는데, 앱 사전을 파싱하는 동안 컨트롤이 먼저 `UiApplication.Current`를 건드리면 그때는 `Application`에 WPF UI 리소스가 아직 없어서 `Application`이 아닌 **자기만의 임시 사전**을 쓰는 상태로 굳기 때문이다(그 객체에 쓴 키는 우리 `Application`에서 안 보인다). 앱 사전을 올린 뒤 `_uiApplication` 캐시를 비우고 훅을 실행하도록 했다(`HostApplication`의 라이브러리 훅 목록, 현재 WPF UI 하나).
+9. **앱 수준 사전 적용의 부분 실패 복구**: `internal` 변환기 같은 요소 하나가 실패해도 앱 사전 전체를 버리지 않고 그 요소만 건너뛴다(문서 안 주입과 같은 방식). 이게 없으면 8번의 훅까지 가지 못했다.
+10. **창 핸들(PresentationSource)이 필요한 컨트롤**: WPF UI `AutoSuggestBox`는 템플릿 적용 때 `(HwndSource)PresentationSource.FromVisual(this)!`로 창에 훅을 거는데, 화면 밖 렌더에는 그게 없어 `NullReferenceException`이 났다. 렌더가 실패하면 **한 번만** 숨은 메시지 전용 창(`HwndSource`)에 루트를 붙여 다시 그린다(5개 파일: `AutoSuggestBoxPage`, `IconsPage`, `NavigationViewPage`, `MainWindow`, `SandboxWindow`). 두 가지 함정이 있었다: `SizeToContent`를 쓰면 `RootVisual`을 붙이는 순간 창 메시지 콜백 안에서 동기 레이아웃이 돌아 예외가 잡히지 않고 **호스트가 `0xC000041D`로 즉사**한다(그래서 쓰지 않고 레이아웃은 우리가 `try` 안에서 돌린다). 붙인 뒤에는 `Loaded` 같은 지연 처리에서 앱 코드가 예외를 낼 수 있어(예: `PageControlDocumentation.OnLoaded`) 이 구간에서만 `Dispatcher.UnhandledException`을 가로채 무시하고 `RenderedWithHiddenWindow` 경고로 알린다. 다시 실패하면 처음 오류를 그대로 보고한다.
+11. **재빌드 시 메모리 누적 완화**: 아래 "알려진 부작용" 참고.
+
+**눈으로 확인한 그림**(결과 PNG를 직접 열어 봄, 6개 파일뿐이다. 나머지는 "오류 없음"만 확인했다):
 - MaterialDesign `Buttons.xaml`: Material 스타일(색 버튼, 원형/분할 버튼, 배지, 칩)이 정상으로 그려진다.
 - MahApps `ExampleViews\ButtonsExample.xaml`: Metro 스타일 버튼/토글 스위치/체크박스/라디오 버튼이 그려진다.
-- WPF UI `Views\Pages\BasicInput\ButtonPage.xaml`: 표준 버튼과 일부 버튼은 맞지만 **Accent 버튼, FontIcon 버튼, ImageIcon 버튼, Primary 버튼이 비어 보인다**(오류는 없다). 강조색(accent) 배경이 적용되지 않은 것으로 추정되나 **원인은 확인하지 못했다.** 즉 "오류 없이 렌더됨"이 "그림이 맞음"은 아니다. 86개 중 얼마나 이런 부분적 깨짐이 있는지는 측정하지 않았다.
+- WPF UI `Views\Pages\BasicInput\ButtonPage.xaml`: 8번 수정 전에는 Accent/FontIcon/ImageIcon/Primary 버튼이 **비어 보였고**(오류 없이!), 수정 후에는 강조색 파랑으로 그려진다. 즉 "오류 없이 렌더됨"이 "그림이 맞음"은 아니다.
+- WPF UI `AutoSuggestBoxPage.xaml`: 검색창과 "Show clear button" 체크박스가 그려진다(10번 수정 전에는 오류).
+- WPF UI `Views\Windows\MainWindow.xaml`(1450x802): 창 크롬(최소화/최대화/닫기), 검색창, 도구 버튼이 그려진다. 네비게이션 목록과 본문 영역은 앱 코드가 실행 중에 채우는 부분이라 **비어 있다**(정적 렌더의 한계).
+- 다른 파일에 부분적 깨짐이 얼마나 더 있는지는 측정하지 않았다.
 
-### 남은 실패 25건의 원인 (3개 합산)
+### 남은 실패 20건의 원인 (3개 합산)
 | 건수 | 원인 | 비고 |
 |---|---|---|
-| 5 | `RenderFailed: Object reference not set to an instance of an object` | 원인 미조사. 라이브러리 컨트롤이 렌더 중 `null`을 참조 |
 | 4 | 루트가 `ResourceDictionary` | 스타일/리소스 파일이라 미리보기 대상이 아님(정상) |
-| 4 | 이미지/아이콘 리소스 | `Icon="….ico"`처럼 문서 기준 **상대 경로**로 프로젝트 리소스를 가리키는 경우(미해결) |
-| 3 | 알 수 없는 형식 | 개별 사례(예: 프로젝트 자신의 변환기 `ComboBoxItemToDataTemplateConverter`) |
-| 2 | 루트가 `Application` | `App.xaml` 자체(미리보기 대상이 아님) |
-| 그 외 | `MetroWindow`의 `Resources` 중복 설정(2), 컴파일된 사전 전용 `x:Shared`(1), 라이브러리의 첨부 이벤트 핸들러(2), 앱 테마 키 의존(1) 등 | 개별 사례 |
+| 3 | 루트가 `Application`(`App.xaml` 자체) | 미리보기 대상이 아님(정상). 합산하면 **미리보기 대상이 아닌 파일이 7건**이다 |
+| 4 | 이미지/아이콘 리소스 | `Icon="….ico"`, `Icon="..\x.ico"`처럼 문서 기준 **상대 경로**로 프로젝트 리소스를 가리키는 `Window` 아이콘(미해결) |
+| 3 | `internal` 타입 | 프로젝트의 `internal` 변환기/컨트롤(`MaterialDesignDemo`, `Wpf.Ui.Gallery.Helpers`)은 컴파일되지 않은 XAML을 읽는 `XamlReader`가 만들지 못한다("알 수 없는 형식") |
+| 2 | 라이브러리의 **첨부 이벤트 핸들러 속성**(`materialDesign:DialogHost.DialogClosingAttached="핸들러"`) | 접두사가 붙은 이벤트 속성은 제거 대상으로 인식하지 못한다(미해결, 고칠 수 있는 범위) |
+| 2 | `MetroWindow`의 `Resources` 중복 설정 | `Window.Resources`를 직접 쓰는 `MetroWindow` 파생 XAML |
+| 1 | 컴파일된 사전 전용 `x:Shared` | 개별 사례 |
+| 1 | `StaticResource` 키 없음(WPF UI `SettingsPage`) | 앱 코드가 채우는 키로 추정, 미조사 |
 
 ### 알려진 부작용과 한계
 - **메모리**: 프로젝트 어셈블리 컨텍스트가 수집 불가라서 **산출물을 다시 빌드해 다시 불러올 때마다 이전 어셈블리가 프로세스에 남는다.** 큰 WPF 앱 프로젝트(CodeAtlas)로 재빌드를 흉내 내 측정하니 재빌드 1회당 비공개 메모리가 약 7MB 늘었다(8회 56→111MB). 호스트가 응답 없이 강제 종료되거나 VS Code **Reload Window**를 하면 초기화된다. 라이브러리 사전을 쓰는 프로젝트는 불러오는 어셈블리가 더 많아 증가량이 더 클 수 있다(측정하지 않음).
+  - **완화(11번)**: 호스트 비공개 메모리가 처음 사용자 어셈블리를 로드한 직후보다 768MB(`UserAssemblies.RecycleGrowthBytes`) 넘게 늘면 렌더 응답에 `recycle: true`를 싣고(`H024`), 확장이 **처리 중인 요청이 없을 때** 그 호스트를 정상 종료(shutdown)하고 새 호스트로 바꾼다(`E015`, 크래시 로그 없음). 호스트가 스스로 종료하면 이미 보낸 다음 요청이 `HostCrashedError`로 거절될 수 있어 확장이 주도하게 했다. 확장 단위 테스트(`X-C06`, `X-C07`)로 검증했다. **임계값(768MB)에 실제로 도달하는 상황은 시험하지 못했다**(임의로 정한 값이다). 기준을 절대 크기가 아니라 증가량으로 한 것은 프로젝트 자체가 커서 늘 큰 경우 응답마다 재시작을 요청하지 않게 하려는 것이다. 재빌드 시 증가량은 CodeAtlas 약 7MB, MahApps 약 12MB(4회 56→…→161MB 실측)다.
 - 호스트는 사용자 코드를 이 PC에서 실행한다. 이 검증도 내려받은 라이브러리의 컨트롤 생성자를 실제로 실행했다.
 - 별도 `Window` 크롬은 그리지 않는다(원래 한계).
 - 이 숫자는 "XAML 파일 하나를 앱 밖에서 따로 그릴 수 있는가"다. 실제 앱의 데이터(DataContext)와 코드 비하인드 동작은 재현하지 않는다.
 
 ## 5. 다음 개선 후보 (아직 하지 않음)
-0. **WPF UI 강조색(accent) 요소가 비어 보이는 원인 조사**(4절 "눈으로 확인한 그림"). 시스템 강조색 리소스가 호스트에 없어서일 수 있다.
-1. `RenderFailed: Object reference not set…` 5건의 원인 조사.
-2. 문서 기준 상대 경로 이미지/아이콘(`Icon="x.ico"`)을 프로젝트 어셈블리의 컴파일된 리소스 경로로 바꾸기(프로젝트 폴더 기준 경로 계산 필요).
-3. 공유 프로젝트(Shared)의 XAML: 가장 가까운 `.csproj`에 산출물이 없으면 같은 폴더 트리를 참조하는 다른 프로젝트의 산출물을 찾기.
-4. 재빌드 시 메모리 증가 완화: 일정 횟수 이상 다시 불러오면 호스트를 다시 시작하거나, 라이브러리 사전이 필요 없는 프로젝트는 수집 가능 컨텍스트를 유지.
-5. 라이브러리 사전 안의 개별 컨트롤 실패가 문서 전체 실패로 번지지 않도록 하는 복구 범위 확대(현재는 인라인 구간만).
+1. **접두사가 붙은 첨부 이벤트 핸들러 속성**(`materialDesign:DialogHost.DialogClosingAttached="…"`) 제거: 지금은 접두사 없는 이벤트 속성과 `Owner.Event`(WPF 기본 네임스페이스 소유자)만 인식한다. 소유자 타입을 속성의 접두사 네임스페이스에서 찾으면 2건이 풀린다.
+2. 문서 기준 상대 경로 이미지/아이콘(`Icon="x.ico"`, `Icon="..\x.ico"`)을 프로젝트 어셈블리의 컴파일된 리소스 경로로 바꾸기(프로젝트 폴더 기준 경로 계산 필요, 4건).
+3. 공유 프로젝트(Shared)의 XAML: 가장 가까운 `.csproj`에 산출물이 없으면 같은 폴더 트리를 참조하는 다른 프로젝트의 산출물을 찾기(HandyControl 149개).
+4. **`internal` 타입 지원**(3건): 컴파일되지 않은 XAML을 읽는 `XamlReader`는 public이 아닌 타입을 만들지 못한다. 앱 프로젝트의 `internal` 변환기/컨트롤은 흔해서 일반화할 가치가 있으나, WPF 로더가 `XamlObjectWriterSettings.AccessLevel`을 노출하지 않아 설계가 필요하다.
+5. `MetroWindow`의 `Resources` 중복 설정 등 라이브러리별 개별 사례.
+6. 라이브러리별 시작 훅(`HostApplication`의 목록)은 현재 WPF UI 하나뿐이다. 다른 라이브러리에서 비슷한 "앱 시작 코드가 채우는 값" 문제가 보이면 같은 방식으로 추가한다.
 
 ## 6. 샘플 정리
 `WpfControlSamples`는 저장소 밖이며 약 140MB + 빌드 산출물이다. 필요 없으면 폴더째 지워도 이 저장소에는 영향이 없다.

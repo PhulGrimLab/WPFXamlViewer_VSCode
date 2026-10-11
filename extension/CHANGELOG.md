@@ -10,14 +10,33 @@
 - `pack://application:` 값을 쓰는 `Setter`(앱 아이콘 등)를 제거해 `Setter 초기화` 오류를 막는다(`RemovedApplicationResource` 경고).
 - 사용자 컨트롤(`clr-namespace`, `assembly=` 없음)의 `Click` 같은 이벤트 핸들러 속성도 제거한다(이전에는 '`Click`을 만들지 못했습니다' 오류).
 
-- **유명 컨트롤 라이브러리(MaterialDesign/MahApps.Metro/WPF UI) 지원 대폭 개선**: 데모 XAML 180개 중 오류 없이 렌더되는 비율 20% → 86%(`doc/07_Third_Party_Control_Verification.md`).
+- **유명 컨트롤 라이브러리(MaterialDesign/MahApps.Metro/WPF UI) 지원 대폭 개선**: 데모 XAML 180개 중 오류 없이 렌더되는 비율 20% → 89%(`doc/07_Third_Party_Control_Verification.md`).
   - 라이브러리 DLL에 컴파일된 리소스 사전(`pack://application:,,,/라이브러리;component/…`)을 로드된 어셈블리에서 읽는다.
   - 신뢰된 폴더에서 호스트가 `Application`을 만들어 `App.xaml` 리소스를 얹는다(라이브러리가 `Application.Current.Resources`를 본다).
   - URI형 xmlns(`http://…`)를 쓰면, 그리고 XAML에서만 쓰는 의존 어셈블리까지 필요할 때 출력 폴더의 관리 DLL을 로드한다.
   - `pack://application:,,,/Assets/…`(마크업 확장 인자 안 포함)를 프로젝트 어셈블리 경로로 바꾼다. 같은 개수 인자의 생성자가 여럿인 마크업 확장을 허용한다.
-- 알려진 부작용: 프로젝트 어셈블리 컨텍스트가 수집 불가(non-collectible)라 **다시 빌드해 다시 불러올 때마다 호스트 메모리가 약 7MB씩 늘 수 있다**(측정값, VS Code Reload Window로 초기화). 수집 가능 컨텍스트는 WPF의 동적 코드와 충돌해("non-collectible assembly may not reference a collectible assembly") 쓸 수 없었다.
+- **WPF UI 강조색(Accent/Primary) 요소가 비어 보이던 문제 해결**: `UiApplication`이 `Application`이 아닌 자기만의 사전을 쓰는 상태로 굳어 앱 시작 코드(`ApplySystemAccent`)가 쓴 값이 `Application.Resources`에 없었다. 앱 사전을 올린 뒤 알려진 라이브러리(WPF UI)의 시작 훅을 실행한다(캐시를 비운 뒤 `ApplicationAccentColorManager.ApplySystemAccent()`).
+- 앱 수준 리소스 사전 적용도 실패한 요소만 건너뛴다(예: `internal` 변환기 타입). 문서 안 주입과 같은 방식이다.
+- **창 핸들(PresentationSource)이 필요한 컨트롤 지원**: 렌더가 실패하면 한 번만 숨은 메시지 전용 창(`HwndSource`)에 루트를 붙여 다시 그린다(WPF UI `AutoSuggestBox`, `NavigationView`, `FluentWindow` 등). 그 뒤 `Loaded` 같은 지연 처리에서 앱 코드가 낸 예외는 무시하고 `RenderedWithHiddenWindow` 경고로 알린다. 다시 실패하면 처음 오류를 그대로 보고한다.
+- 렌더 실패 원인(형식+스택, 메시지 제외)을 Debug 로그(`H012 cause=`)에 남긴다.
+- **재빌드 시 메모리 누적 완화**: 호스트 비공개 메모리가 처음 로드 직후보다 768MB 넘게 늘면 렌더 응답에 `recycle:true`를 싣고(`H024`), 확장은 처리 중인 요청이 없을 때 그 호스트를 정상 종료하고 새 호스트로 바꾼다(`E015`, 크래시 로그 없음).
+- 알려진 부작용: 프로젝트 어셈블리 컨텍스트가 수집 불가(non-collectible)라 **다시 빌드해 다시 불러올 때마다 호스트 메모리가 약 7MB씩 늘 수 있다**(측정값, 768MB 넘게 늘면 위처럼 호스트를 교체하고, VS Code Reload Window로도 초기화된다). 수집 가능 컨텍스트는 WPF의 동적 코드와 충돌해("non-collectible assembly may not reference a collectible assembly") 쓸 수 없었다.
 - 신뢰하지 않은 문서(Tier 0)는 같은 프로세스에서 앞서 로드된 사용자 타입도 자리표시자로 취급한다.
 - 알려진 한계: "오류 없이 렌더"가 "그림이 완전히 맞음"은 아니다(예: WPF UI 강조색 버튼이 비어 보임, 원인 미확인).
+
+### 보안 수정
+- **병합 사전/`App.xaml` 경로 탈출 차단**(신뢰하지 않은 폴더의 XAML이 로컬 파일을 읽어 인라인할 수 있었다): `ResourceDictionary Source`에 절대 경로(`C:\…`)를 쓰면 `Path.Combine`이 기준 폴더를 무시했고, `..\`로 프로젝트 밖 파일을 읽었으며, 프로젝트 안의 정션/심볼릭 링크로도 우회됐다. 이제 프로젝트 경계(가장 가까운 `.csproj`/`.sln`/`.slnx`/`.git`) 안에서만, 링크를 지나지 않는 파일만 읽는다. 재현 테스트 3개(`RD07`~`RD09`)로 취약점을 확인한 뒤 수정했다.
+- 신뢰하지 않은 렌더(Tier 0)가 앞서 신뢰된 렌더가 올린 `Application.Resources`(사용자 타입 인스턴스 포함)와 이미 로드된 사용자 어셈블리의 이름 해석을 쓰지 못하게 했다.
+- 어셈블리 이름 검증: 프로젝트 파일의 `AssemblyName`과 XAML의 `assembly=`/`;component/` 값에 위험 문자(따옴표, 꺾쇠, `;`, 경로 구분자 등)가 있으면 쓰지 않는다. 프로젝트 파일은 DTD를 금지하고 읽는다(엔티티 확장 폭주 방지).
+- 렌더 실패 원인 로그에는 예외 **메시지를 싣지 않는다**(파서 메시지에 XAML 조각이 들어갈 수 있다).
+
+### 코드 리뷰로 고친 것
+- 재빌드로 버려진 임시 복사본(`%TEMP%\xamlviewer-user-*`)이 지워지지 않고 쌓이던 문제(측정 중 159개 폴더, 637MB): 수집 불가 컨텍스트는 DLL을 프로세스가 끝날 때까지 잠가 종료 시 삭제가 실패했다. 버린 폴더를 기억해 종료 때 다시 시도하고, 다음 호스트가 시작할 때 10분 넘은 폴더를 백그라운드로 지운다.
+- 라이브러리 시작 훅이 재빌드 뒤 **낡은 복사본**의 어셈블리에 실행되던 문제: 현재 프로젝트의 컨텍스트에서 찾는다.
+- 의존성 미리 로드가 xmlns마다 폴더 전체를 다시 훑던 문제: 컨텍스트당 한 번만 한다. 자체 포함 출력의 프레임워크 DLL(`PresentationFramework` 등)은 사용자 컨텍스트에 따로 로드하지 않는다(형식 ID가 달라진다).
+- 숨은 창 폴백이 정리할 때 쌓인 지연 콜백(`Unloaded` 등)을 예외 처리기를 떼고 나서야 처리해 호스트가 죽을 수 있던 문제: 처리기가 붙어 있는 동안 비운다.
+- 확장의 재활용 요청이 크래시/타임아웃으로 사라진 호스트의 것을 새 호스트가 이어받던 문제: 호스트가 바뀌면 초기화한다. 호스트의 재시작 판단을 "절대 1GiB"에서 "처음 로드 직후보다 768MB 증가"로 바꿨다(프로젝트 자체가 커서 늘 1GiB를 넘으면 응답마다 재시작을 요청하던 문제).
+- 렌더 전체를 하나의 잠금으로 직렬화했다(프로세스 전역 `Application` 상태를 여러 스레드가 동시에 바꾸면 안 된다. 호스트는 원래 직렬이라 테스트의 병렬 실행에서만 문제였다).
 
 ### 테스트
 - Fluent 테마(`ThemeMode`) 골든 2건(R15/R16)은 .NET 런타임 서비스 버전/시스템 강조색에 따라 색이 달라 같은 크기면 "비교 불가"(건너뜀)로 처리한다.

@@ -73,6 +73,34 @@ describe('HostClient', () => {
         assert.strictEqual(c.logs.filter((l) => l.id === 'E010').length, 2);
     });
 
+    it('X-C06 호스트가 recycle을 요청하면 응답은 정상 전달하고, 다음 요청에서 정상 종료 후 새 호스트로 바뀐다(E015, 크래시 아님)', async () => {
+        const c = createClient();
+        client = c.client;
+        const first = await client.request<{ recycle: boolean; pid: number }>('recycle');
+        assert.strictEqual(first.recycle, true, '응답은 그대로 전달된다');
+        assert.strictEqual(c.logs.filter((l) => l.id === 'E010').length, 1, '아직 새 호스트를 띄우지 않았다');
+
+        const second = await client.request<{ pid: number }>('ping');
+        assert.notStrictEqual(second.pid, first.pid, '다음 요청은 새 호스트가 처리한다');
+        assert.ok(c.logs.some((l) => l.id === 'E015' && l.level === 'Info'));
+        assert.ok(!c.logs.some((l) => l.id === 'E012'), '정상 종료이므로 크래시 로그가 없어야 한다');
+        await waitUntil(() => !isAlive(first.pid));
+    });
+
+    it('X-C07 recycle 요청 뒤라도 처리 중인 요청이 있으면 호스트를 바꾸지 않는다(그 응답을 받아야 하므로)', async () => {
+        const c = createClient();
+        client = c.client;
+        const slow = client.request<{ tag: string }>('delay', { ms: 250, tag: 'slow' }); // 처리 중으로 남는다
+        const recycle = await client.request<{ pid: number }>('recycle'); // 응답은 먼저 오고 재시작 요청이 기록된다
+        const whileBusy = await client.request<{ pid: number }>('ping'); // 아직 slow가 처리 중 → 같은 호스트
+        assert.strictEqual(whileBusy.pid, recycle.pid, '처리 중인 요청이 있는 동안에는 호스트를 바꾸지 않는다');
+        assert.strictEqual((await slow).tag, 'slow', '처리 중이던 요청의 응답도 정상으로 받는다');
+
+        const afterIdle = await client.request<{ pid: number }>('ping'); // 이제 놀고 있다 → 바뀐다
+        assert.notStrictEqual(afterIdle.pid, recycle.pid);
+        assert.ok(!c.logs.some((l) => l.id === 'E012'), '크래시 없이 끝나야 한다');
+    });
+
     it('X-C03 호스트 즉사: HostCrashedError(E012), 이후 요청은 자동 복구', async () => {
         const c = createClient();
         client = c.client;

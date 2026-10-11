@@ -161,6 +161,33 @@ public class UserProjectTests
     }
 
     [TestMethod]
+    public void T09b_UntrustedRender_CannotSeeAppResourcesAppliedByEarlierTrustedRender()
+    {
+        // 보안(심층 방어): 신뢰된 렌더가 Application.Resources에 올린 리소스(사용자 타입 인스턴스를 담을 수 있다)를
+        // 같은 프로세스의 신뢰하지 않은 렌더가 {StaticResource}로 얻으면 안 된다.
+        using var project = UserProjectFixture.Create();
+        var appXaml = Path.Combine(project.Directory, "App.xaml");
+        File.WriteAllText(appXaml,
+            $"<Application {Ns} xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" xmlns:sys=\"clr-namespace:System;assembly=mscorlib\"><Application.Resources><sys:Double x:Key=\"LeakW\">55</sys:Double></Application.Resources></Application>");
+        var xaml = $"<StackPanel {Ns} xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\" Height=\"20\"><Border Width=\"{{StaticResource LeakW}}\" Height=\"20\"/></StackPanel>";
+
+        var trusted = Render(project, xaml, allow: true);
+        Assert.AreEqual(55, trusted.PixelWidth, "신뢰된 렌더는 App.xaml 리소스를 본다");
+
+        File.Delete(appXaml); // 문서 안 주입으로는 더 이상 보이지 않는다. 남은 경로는 Application.Resources뿐이다.
+        XamlRenderException? failure = null;
+        try
+        {
+            Render(project, xaml, allow: false);
+        }
+        catch (XamlRenderException ex)
+        {
+            failure = ex;
+        }
+        Assert.IsNotNull(failure, "신뢰하지 않은 렌더는 앞서 올린 Application.Resources를 볼 수 없어야 한다(키를 못 찾아 실패)");
+    }
+
+    [TestMethod]
     public void T09_Tier1_WorksTogetherWithAppXamlResources()
     {
         // Tier 1은 XamlReader.Load(XamlXmlReader) 경로를 쓴다: App.xaml 리소스 주입과 루트 속성 이동이 이 경로에서도 동작해야 한다.

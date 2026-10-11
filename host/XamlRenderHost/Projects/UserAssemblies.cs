@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Threading;
 
 namespace XamlRenderHost.Projects;
 
@@ -26,10 +27,40 @@ public sealed class UserAssemblies
     private readonly object _gate = new();
     private readonly Dictionary<string, LoadedProject> _projects = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>다시 불러오며 버렸지만 DLL이 잠겨 아직 못 지운 임시 복사본들(<see cref="_gate"/>로 보호).</summary>
+    private readonly List<string> _abandonedTempDirectories = new();
+
+    /// <summary>
+    /// 이 스레드의 렌더가 **신뢰된(Tier 1)** 렌더인가. true일 때만 기본 컨텍스트의 이름 해석 요청(<see cref="OnDefaultResolving"/>)에 사용자 어셈블리를 돌려준다.
+    /// 신뢰하지 않은 문서가 `{local:Ext}`/`clr-namespace:X;assembly=…`로 앞서 로드된 사용자 어셈블리를 이름으로 불러 사용자 코드를 실행하지 못하게 하는 장치다.
+    /// 렌더러가 Tier 1 렌더 구간에서만 켠다(<see cref="BeginTrustedResolution"/>).
+    /// </summary>
+    [ThreadStatic]
+    private static bool _resolutionAllowedOnThisThread;
+
+    /// <summary>이 스레드에서 사용자 어셈블리 이름 해석을 허용한다. 반환된 객체를 Dispose하면 원래대로 닫힌다(using으로 감싼다).</summary>
+    public static IDisposable BeginTrustedResolution()
+    {
+        var previous = _resolutionAllowedOnThisThread;
+        _resolutionAllowedOnThisThread = true;
+        return new ResolutionScope(previous);
+    }
+
+    private sealed class ResolutionScope : IDisposable
+    {
+        private readonly bool _previous;
+
+        public ResolutionScope(bool previous) { _previous = previous; }
+
+        public void Dispose() { _resolutionAllowedOnThisThread = _previous; }
+    }
+
     private UserAssemblies()
     {
         AssemblyLoadContext.Default.Resolving += OnDefaultResolving;
         AppDomain.CurrentDomain.ProcessExit += (_, _) => DeleteAllTempDirectories();
+        // 이전 호스트가 남긴(잠겨서 못 지운) 임시 복사본 정리. 수백 MB를 지우는 데 시간이 걸릴 수 있어 첫 렌더를 막지 않도록 백그라운드에서 한다.
+        ThreadPool.QueueUserWorkItem(_ => SweepStaleTempDirectories());
     }
 
     /// <summary>프로젝트 하나의 로드 상태.</summary>
@@ -43,11 +74,19 @@ public sealed class UserAssemblies
         public required Assembly Assembly { get; init; }
     }
 
-    /// <summary>사용자 어셈블리 전용 컨텍스트. 수집 가능(Unload 가능)이며 deps.json으로 의존성을 찾는다.</summary>
+    /// <summary>
+    /// 사용자 어셈블리 전용 컨텍스트. deps.json으로 의존성을 찾는다.
+    /// **수집 불가(non-collectible)**: WPF가 BAML을 로드할 때 만드는 동적 코드가 수집 가능한 어셈블리를 참조하지 못해("A non-collectible assembly may not
+    /// reference a collectible assembly") 라이브러리의 컴파일된 리소스 사전을 읽을 수 없기 때문이다. 대가로 다시 불러올 때마다 이전 어셈블리가 프로세스에
+    /// 남는다(메모리 누적은 <see cref="ShouldRecycle"/>로 호스트를 새로 띄워 완화한다).
+    /// </summary>
     private sealed class UserLoadContext : AssemblyLoadContext
     {
         private readonly AssemblyDependencyResolver _resolver;
         private readonly string _mainDirectory;
+
+        /// <summary>의존성을 이미 미리 로드했는가. 폴더 전체 로드는 느리므로 컨텍스트당 한 번만 한다(xmlns마다 반복하지 않는다).</summary>
+        private bool _dependenciesPreloaded;
 
         public UserLoadContext(string mainAssemblyPath) : base("XamlViewer.User:" + Path.GetFileName(mainAssemblyPath), isCollectible: false)
         {
@@ -62,6 +101,15 @@ public sealed class UserAssemblies
         /// </summary>
         public void PreloadDependencies(Assembly main)
         {
+            if (_dependenciesPreloaded)
+            {
+                return; // 이미 했다(같은 컨텍스트의 의존성은 다시 목록을 훑을 필요가 없다).
+            }
+            else
+            {
+                _dependenciesPreloaded = true;
+            }
+
             PreloadSiblingAssemblies();
             foreach (var reference in main.GetReferencedAssemblies())
             {
@@ -94,6 +142,16 @@ public sealed class UserAssemblies
             {
                 try
                 {
+                    // 프레임워크 어셈블리는 건너뛴다: 자체 포함(self-contained) 출력에는 PresentationFramework 같은 복사본이 들어 있는데,
+                    // 그것을 이 컨텍스트에 또 로드하면 호스트의 WPF와 형식 ID가 달라져 컨트롤이 깨진다. 프레임워크는 기본 컨텍스트가 책임진다.
+                    if (IsFrameworkAssembly(AssemblyName.GetAssemblyName(path).Name))
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        // 앱/라이브러리 어셈블리: 로드.
+                    }
                     LoadFromAssemblyPath(path);
                 }
                 catch (Exception ex) when (ex is IOException or BadImageFormatException or FileLoadException or UnauthorizedAccessException)
@@ -107,6 +165,26 @@ public sealed class UserAssemblies
         {
             var path = _resolver.ResolveAssemblyToPath(assemblyName);
             return path == null ? null : LoadFromAssemblyPath(path); // null이면 기본 컨텍스트(프레임워크)가 처리한다.
+        }
+    }
+
+    /// <summary>호스트의 기본 로드 컨텍스트(공유 프레임워크)가 책임지는 어셈블리 이름 접두사.</summary>
+    private static readonly string[] FrameworkAssemblyPrefixes =
+    {
+        "System.", "Microsoft.Win32.", "Microsoft.CSharp", "Microsoft.VisualBasic", "Presentation", "WindowsBase", "ReachFramework", "UIAutomation", "netstandard", "mscorlib",
+    };
+
+    /// <summary>이름이 프레임워크 어셈블리인가(호스트가 이미 가진 것이거나 그 공유 프레임워크 소속이라 사용자 컨텍스트에 따로 로드하면 안 된다).</summary>
+    private static bool IsFrameworkAssembly(string? simpleName)
+    {
+        if (string.IsNullOrEmpty(simpleName))
+        {
+            return false;
+        }
+        else
+        {
+            return FrameworkAssemblyPrefixes.Any(prefix => simpleName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                || AssemblyLoadContext.Default.Assemblies.Any(a => string.Equals(a.GetName().Name, simpleName, StringComparison.OrdinalIgnoreCase));
         }
     }
 
@@ -172,6 +250,14 @@ public sealed class UserAssemblies
                     Context = context,
                     Assembly = assembly,
                 };
+                if (_baselinePrivateBytes == 0)
+                {
+                    _baselinePrivateBytes = CurrentPrivateBytes(); // 처음 로드 직후를 기준선으로 삼는다.
+                }
+                else
+                {
+                    // 기준선은 이미 있다.
+                }
                 return new UserAssemblyLoad(assembly, true, started.ElapsedMilliseconds, null);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BadImageFormatException or FileLoadException)
@@ -179,6 +265,58 @@ public sealed class UserAssemblies
                 TryDeleteDirectory(tempDirectory);
                 return new UserAssemblyLoad(null, false, started.ElapsedMilliseconds, $"{ex.GetType().Name}: {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// 처음 사용자 어셈블리를 로드한 직후의 프로세스 비공개 메모리(바이트). 재시작 판단의 기준선이다 — 수집 불가 컨텍스트가 다시 불러올 때마다 쌓는 **증가량**을 보려는 것이다.
+    /// 프로젝트 자체가 커서 늘 1GB를 넘는 경우에도(절대 크기 기준이면 응답마다 재시작을 요청한다) 증가량이 작으면 재시작하지 않는다. 0이면 아직 기준을 잡지 않았다.
+    /// </summary>
+    private long _baselinePrivateBytes;
+
+    /// <summary>기준선보다 이만큼(바이트) 더 늘면 호스트가 재시작을 요청한다(재빌드 1회당 약 7MB 측정 → 대략 100회분).</summary>
+    private const long RecycleGrowthBytes = 768L * 1024 * 1024;
+
+    /// <summary>현재 프로세스 비공개 메모리(바이트). Process 객체는 핸들을 쥐므로 바로 해제한다.</summary>
+    private static long CurrentPrivateBytes()
+    {
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        return process.PrivateMemorySize64;
+    }
+
+    /// <summary>
+    /// 호스트 재시작을 권할 때 true: 사용자 어셈블리를 로드한 적이 있고 프로세스 비공개 메모리가 기준선보다 <see cref="RecycleGrowthBytes"/> 넘게 늘었다.
+    /// 호출자(렌더 응답 작성)가 응답에 `recycle: true`를 실으면 확장이 대기 요청이 없을 때 호스트를 새로 띄운다.
+    /// </summary>
+    public bool ShouldRecycle()
+    {
+        lock (_gate)
+        {
+            return _projects.Count > 0 && _baselinePrivateBytes > 0 && CurrentPrivateBytes() - _baselinePrivateBytes > RecycleGrowthBytes;
+        }
+    }
+
+    /// <summary>
+    /// 이름이 같은 어셈블리 중 **현재 로드된 프로젝트의 컨텍스트에 있는 것**을 돌려준다(없으면 null). 다시 불러온 뒤에는 이전 복사본이 AppDomain에 남아 있으므로
+    /// `AppDomain.GetAssemblies()`의 첫 일치를 쓰면 낡은 복사본을 집는다 — 라이브러리 훅 같은 호출자는 이것을 써야 한다.
+    /// </summary>
+    public Assembly? FindCurrentAssembly(string simpleName)
+    {
+        lock (_gate)
+        {
+            foreach (var project in _projects.Values)
+            {
+                var found = project.Context.Assemblies.FirstOrDefault(a => string.Equals(a.GetName().Name, simpleName, StringComparison.OrdinalIgnoreCase));
+                if (found != null)
+                {
+                    return found;
+                }
+                else
+                {
+                    // 이 프로젝트에는 없음: 다음 프로젝트 확인.
+                }
+            }
+            return null;
         }
     }
 
@@ -205,6 +343,15 @@ public sealed class UserAssemblies
     /// </summary>
     public void EnsureReferencedAssemblyLoaded(string assemblyName)
     {
+        if (!ProjectLocator.IsSafeAssemblyName(assemblyName))
+        {
+            return; // XAML이 준 문자열이다: 경로 구분자 등이 든 이름으로 로드 경로를 바꾸지 못하게 한다.
+        }
+        else
+        {
+            // 안전한 이름: 로드 시도.
+        }
+
         lock (_gate)
         {
             foreach (var project in _projects.Values)
@@ -214,9 +361,9 @@ public sealed class UserAssemblies
                     project.Context.LoadFromAssemblyName(new AssemblyName(assemblyName));
                     return;
                 }
-                catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or BadImageFormatException)
+                catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or BadImageFormatException or ArgumentException)
                 {
-                    // 이 프로젝트의 컨텍스트에는 없음: 다음 프로젝트 확인.
+                    // 이 프로젝트의 컨텍스트에는 없음(또는 이름이 어셈블리 이름으로 해석되지 않음): 다음 프로젝트 확인.
                 }
             }
         }
@@ -246,6 +393,15 @@ public sealed class UserAssemblies
     /// </summary>
     private Assembly? OnDefaultResolving(AssemblyLoadContext _, AssemblyName name)
     {
+        if (!_resolutionAllowedOnThisThread)
+        {
+            return null; // 신뢰된 렌더 구간이 아니다(예: 신뢰하지 않은 문서의 렌더): 사용자 어셈블리를 내주지 않는다.
+        }
+        else
+        {
+            // 신뢰된 렌더 구간: 아래에서 찾는다.
+        }
+
         lock (_gate)
         {
             foreach (var project in _projects.Values)
@@ -287,9 +443,18 @@ public sealed class UserAssemblies
         }
         else
         {
-            // 실험: 수집 불가 컨텍스트는 Unload할 수 없다(이전 어셈블리는 프로세스가 끝날 때까지 남는다).
+            // 수집 불가 컨텍스트는 Unload할 수 없다: 이전 어셈블리는 프로세스가 끝날 때까지 남고 그 DLL(임시 복사본)도 잠겨 있다.
         }
-        TryDeleteDirectory(project.TempDirectory); // 잠금이 남아 실패해도 프로세스 종료 시 다시 시도한다.
+
+        if (!TryDeleteDirectory(project.TempDirectory))
+        {
+            // 잠겨서 못 지웠다. 이 폴더를 잊지 않고 기억해 종료 때 다시 시도하고(그래도 잠겨 있으면 다음 호스트 시작 때의 정리가 지운다).
+            _abandonedTempDirectories.Add(project.TempDirectory);
+        }
+        else
+        {
+            // 지웠다.
+        }
     }
 
     /// <summary>위성(지역화 리소스) 어셈블리 파일 이름 끝.</summary>
@@ -303,7 +468,7 @@ public sealed class UserAssemblies
     /// </summary>
     private static string CopyOutputDirectory(string sourceDirectory)
     {
-        var target = Path.Combine(Path.GetTempPath(), "xamlviewer-user-" + Guid.NewGuid().ToString("N"));
+        var target = Path.Combine(Path.GetTempPath(), TempDirectoryPrefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(target);
         var hasDepsFile = Directory.GetFiles(sourceDirectory, "*.deps.json", SearchOption.TopDirectoryOnly).Length > 0;
         if (hasDepsFile)
@@ -333,6 +498,10 @@ public sealed class UserAssemblies
         return target;
     }
 
+    /// <summary>
+    /// 종료 때 임시 폴더를 지운다(현재 프로젝트 것과, 다시 불러오며 버린 것 중 아직 남은 것). 단, 수집 불가 컨텍스트의 DLL은 프로세스가 끝날 때까지 매핑되어 잠겨 있어
+    /// 여기서 지우지 못하는 것이 보통이다 — 그 폴더는 다음 호스트가 시작할 때 <see cref="SweepStaleTempDirectories"/>가 정리한다.
+    /// </summary>
     private void DeleteAllTempDirectories()
     {
         lock (_gate)
@@ -341,14 +510,60 @@ public sealed class UserAssemblies
             {
                 TryDeleteDirectory(project.TempDirectory);
             }
+            foreach (var abandoned in _abandonedTempDirectories.ToList())
+            {
+                if (TryDeleteDirectory(abandoned))
+                {
+                    _abandonedTempDirectories.Remove(abandoned);
+                }
+                else
+                {
+                    // 아직 잠김: 다음 시작 때의 정리에 맡긴다.
+                }
+            }
         }
     }
 
-    private static void TryDeleteDirectory(string? directory)
+    /// <summary>임시 폴더 이름 접두사. 정리 대상을 이 호스트가 만든 것으로 한정하는 데 쓴다.</summary>
+    private const string TempDirectoryPrefix = "xamlviewer-user-";
+
+    /// <summary>이 시간(분)보다 오래된 임시 복사본만 시작 때 지운다(막 시작한 다른 호스트의 폴더를 건드리지 않는다).</summary>
+    private const int StaleTempDirectoryAgeMinutes = 10;
+
+    /// <summary>
+    /// 이전 호스트 프로세스가 지우지 못하고 남긴 `xamlviewer-user-*` 임시 복사본을 지운다. 수집 불가 컨텍스트는 DLL을 프로세스가 끝날 때까지 잠가
+    /// 종료 시 삭제가 실패하기 때문에, 다음 시작 때 정리하지 않으면 재빌드마다 수십 MB가 %TEMP%에 계속 쌓인다.
+    /// 아직 실행 중인 다른 호스트가 쓰는 폴더는 DLL이 잠겨 삭제가 실패하므로(조용히 건너뜀) 안전하다.
+    /// </summary>
+    private static void SweepStaleTempDirectories()
+    {
+        try
+        {
+            var threshold = DateTime.UtcNow.AddMinutes(-StaleTempDirectoryAgeMinutes);
+            foreach (var directory in Directory.GetDirectories(Path.GetTempPath(), TempDirectoryPrefix + "*"))
+            {
+                if (Directory.GetCreationTimeUtc(directory) < threshold)
+                {
+                    TryDeleteDirectory(directory);
+                }
+                else
+                {
+                    // 최근 것: 다른 호스트가 쓰는 중일 수 있어 건드리지 않는다.
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // 임시 폴더를 훑지 못함: 정리는 선택 사항이라 무시한다.
+        }
+    }
+
+    /// <summary>삭제를 시도한다. 지웠거나 없으면 true, 잠겨 있어 실패하면 false.</summary>
+    private static bool TryDeleteDirectory(string? directory)
     {
         if (directory == null)
         {
-            return;
+            return true;
         }
         else
         {
@@ -358,10 +573,15 @@ public sealed class UserAssemblies
         try
         {
             Directory.Delete(directory, recursive: true);
+            return true;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return true; // 이미 없다.
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // 아직 잠겨 있다(컨텍스트가 완전히 수집되기 전). 임시 폴더라 치명적이지 않다.
+            return false; // 아직 잠겨 있다(매핑된 DLL). 임시 폴더라 치명적이지 않다.
         }
     }
 }
