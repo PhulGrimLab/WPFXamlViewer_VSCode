@@ -24,7 +24,7 @@ public sealed class SourceElement
 }
 
 /// <summary>전처리 결과: XamlReader가 읽을 수 있는 XAML, 수행한 변경 목록, (태그를 켰다면) 태그한 요소들의 원본 위치.</summary>
-public sealed record PreprocessResult(string Xaml, IReadOnlyList<RenderWarning> Warnings, IReadOnlyList<SourceElement> Elements);
+public sealed record PreprocessResult(string Xaml, IReadOnlyList<RenderWarning> Warnings, IReadOnlyList<SourceElement> Elements, string? ApplicationResourcesXml = null);
 
 /// <summary>전처리가 남기는 경고 코드(프로토콜 warnings[].code 와 같은 문자열).</summary>
 public static class WarningCodes
@@ -125,6 +125,9 @@ public static partial class XamlPreprocessor
         /// <summary>태그한 요소들의 원본 위치(Uid 번호 = 목록 인덱스).</summary>
         public List<SourceElement> SourceElements { get; } = new();
 
+        /// <summary>문서에 주입한 App.xaml 리소스 사전 XML(주입했을 때만). 렌더러가 `Application.Resources`에도 얹는 데 쓴다.</summary>
+        public string? ApplicationResourcesXml { get; set; }
+
         public Context(HashSet<string> visited) { VisitedDictionaries = visited; }
     }
 
@@ -149,7 +152,7 @@ public static partial class XamlPreprocessor
         var context = new Context(visited) { ProjectAssemblyName = projectAssemblyName, Schema = schema ?? new XamlSchemaContext(), TagElements = tagElements };
         var processed = ProcessInternal(xaml, filePath, context, depth: 0);
         processed = InjectApplicationResources(processed, filePath, context);
-        return new PreprocessResult(processed, context.Warnings, context.SourceElements);
+        return new PreprocessResult(processed, context.Warnings, context.SourceElements, context.ApplicationResourcesXml);
     }
 
     /// <summary>한 문서(루트 또는 병합 사전 파일)를 전처리한다. 경고는 context에 누적한다.</summary>
@@ -223,6 +226,11 @@ public static partial class XamlPreprocessor
                     var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
                     edits.Add(new Edit(elementStart, end, standIn + NewlinesIn(xaml, elementStart, end)));
                     warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, $"해석할 수 없는 타입을 대상으로 하는 {definitionName}을(를) 건너뜁니다.", line, col));
+                }
+                else if (IsDictionaryWithSource(reader) && TryKeepLibraryDictionary(reader.GetAttribute("Source")!, filePath, context))
+                {
+                    // 참조 라이브러리에 컴파일된(BAML) 사전: 디스크에 .xaml이 없으므로 인라인하지 않고 그대로 둔다. WPF가 파싱 중에 로드된 어셈블리에서 읽는다.
+                    FindElementEnd(reader, xaml, lineStarts, lineInfo);
                 }
                 else if (IsDictionaryWithSource(reader))
                 {
@@ -314,7 +322,7 @@ public static partial class XamlPreprocessor
         else
         {
             var type = context.Schema.GetXamlType(new XamlTypeName(WithProjectAssembly(ns, context), typeName));
-            return type == null || type.IsUnknown;
+            return type == null || type.IsUnknown || IsHiddenUserType(type, context);
         }
     }
 
@@ -417,6 +425,44 @@ public static partial class XamlPreprocessor
         return changed ? replaced : null;
     }
 
+    /// <summary>앱 리소스 pack URI의 접두(`pack://application:,,,/`).</summary>
+    private const string ApplicationPackPrefix = "pack://application:,,,/";
+
+    /// <summary>`pack://application:,,,/경로`(따옴표/중괄호/공백 전까지)를 캡처한다. 경로(rest)에 `;component/`가 있으면 이미 어셈블리를 지정한 URI다.</summary>
+    private static readonly Regex ApplicationPackUri = new(@"pack://application:,,,/(?<rest>[^'""}\s]*)", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    /// <summary>`pack://application:,,,/어셈블리;component/…` 또는 `/어셈블리;component/…`에서 어셈블리 이름을 꺼낸다(버전/키 토큰 조각은 무시).</summary>
+    private static readonly Regex LibraryPackSource = new(@"^(?:pack://application:,,,)?/([^;/]+)(?:;[^;/]*)*;component/", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Tier 1에서 `Source`가 라이브러리 어셈블리의 컴파일된 리소스(`;component/`)를 가리키고 디스크에서 .xaml을 찾지 못하면 true를 돌려주고
+    /// 그 어셈블리를 미리 로드해 둔다(true면 호출자는 요소를 인라인하지 않고 그대로 둔다). 디스크에서 찾을 수 있으면(프로젝트 자신의 사전) false.
+    /// </summary>
+    private static bool TryKeepLibraryDictionary(string source, string? filePath, Context context)
+    {
+        if (context.ProjectAssemblyName == null)
+        {
+            return false; // Tier 0: 어셈블리를 로드하지 않는다.
+        }
+        else
+        {
+            // Tier 1: 라이브러리 사전 후보.
+        }
+
+        var match = LibraryPackSource.Match(source.Trim());
+        if (!match.Success || ResolveDictionaryPath(source, filePath) != null)
+        {
+            return false;
+        }
+        else
+        {
+            // 컴파일된 사전/템플릿은 의존 어셈블리의 타입(URI xmlns 포함)을 이름으로 참조하므로 의존성도 함께 로드한다.
+            XamlRenderHost.Projects.UserAssemblies.Instance.EnsureReferencedAssemblyLoaded(match.Groups[1].Value);
+            XamlRenderHost.Projects.UserAssemblies.Instance.PreloadAllDependencies();
+            return true;
+        }
+    }
+
     /// <summary>값이 `pack://application:` URI인 `Setter`(속성 요소가 아닌 `Value` 속성 형태)인가.</summary>
     private static bool IsApplicationPackSetter(XmlReader reader)
         => reader.NamespaceURI == PresentationNamespace && reader.LocalName == "Setter"
@@ -435,7 +481,25 @@ public static partial class XamlPreprocessor
         else
         {
             var type = context.Schema.GetXamlType(new XamlTypeName(WithProjectAssembly(reader.NamespaceURI, context), reader.LocalName));
-            return type == null || type.IsUnknown;
+            return type == null || type.IsUnknown || IsHiddenUserType(type, context);
+        }
+    }
+
+    /// <summary>
+    /// Tier 0(프로젝트 어셈블리를 쓰지 않는 렌더)에서 타입이 사용자 컨텍스트(기본 로드 컨텍스트가 아닌 곳)에 이미 로드된 어셈블리의 것인가.
+    /// 같은 프로세스에서 앞서 신뢰된 프로젝트를 로드했다면 그 어셈블리가 AppDomain에 보여 스키마가 타입을 찾아낼 수 있다.
+    /// 신뢰하지 않은 문서는 사용자 코드를 쓰면 안 되고(파서와 판단이 어긋나지도 않게) 그런 타입도 해석 불가(자리표시자)로 취급한다.
+    /// </summary>
+    private static bool IsHiddenUserType(XamlType type, Context context)
+    {
+        if (context.ProjectAssemblyName != null || type.UnderlyingType == null)
+        {
+            return false; // Tier 1이거나 CLR 타입이 아님.
+        }
+        else
+        {
+            var loadContext = System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(type.UnderlyingType.Assembly);
+            return loadContext != null && loadContext != System.Runtime.Loader.AssemblyLoadContext.Default;
         }
     }
 
@@ -478,6 +542,31 @@ public static partial class XamlPreprocessor
             else
             {
                 // 유지할 속성.
+            }
+
+            if (code == null && context.ProjectAssemblyName != null && reader.Value.Contains(ApplicationPackPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                // `pack://application:,,,/Assets/x.png`는 "실행 중인 앱의 리소스"인데 호스트가 앱이 아니라 못 읽는다. Tier 1이면 프로젝트 어셈블리의 컴파일된 리소스로 가리킨다.
+                // 속성 값 자체뿐 아니라 마크업 확장 인자(`{ui:ImageIcon 'pack://…'}`) 안의 URI도 바꾼다.
+                var attributeStart = ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition);
+                var attributeEnd = FindAttributeEnd(xaml, attributeStart);
+                var original = xaml.Substring(attributeStart, attributeEnd - attributeStart);
+                var rewritten = ApplicationPackUri.Replace(original, match =>
+                    match.Groups["rest"].Value.Contains(PackComponentMarker, StringComparison.OrdinalIgnoreCase)
+                        ? match.Value
+                        : $"{ApplicationPackPrefix}{context.ProjectAssemblyName};component/{match.Groups["rest"].Value}");
+                if (rewritten != original)
+                {
+                    edits.Add(new Edit(attributeStart, attributeEnd, rewritten));
+                }
+                else
+                {
+                    // 이미 어셈블리를 지정한 URI뿐: 그대로 둔다.
+                }
+            }
+            else
+            {
+                // 앱 상대 pack URI가 없음.
             }
 
             if (code == null && reader.Value.Contains(":Type", StringComparison.Ordinal))

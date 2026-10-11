@@ -95,7 +95,7 @@ Tier 1은 프로젝트의 **사용자 코드(생성자 등)를 이 PC에서 그�
 - 사용자 컨트롤 자리표시자(Tier 0)는 그 안의 자식 요소를 그리지 않는다.
 - 크기가 0인 요소(빈 `Border`, `Collapsed`)는 클릭으로 선택할 수 없다. `Uid`를 직접 지정한 요소는 클릭 매핑에서 제외된다.
 - 대상 프로젝트가 net8/net9여도 호스트(net10)에서 로드한다. 해당 TFM 전용 동작 차이는 시험하지 않았다.
-- 유명 오픈소스 컨트롤 라이브러리(MaterialDesign, MahApps.Metro, WPF UI, HandyControl)의 데모 XAML을 앱 밖에서 따로 렌더하면 **많은 파일이 실패한다**(1차 측정: 180개 중 36개). 주된 원인은 라이브러리에 컴파일된 테마 사전(`pack://application:,,,/라이브러리;component/…`)을 읽지 못하는 것이다. 자세한 측정과 재현 방법은 `doc/07_Third_Party_Control_Verification.md`.
+- 유명 오픈소스 컨트롤 라이브러리(MaterialDesign, MahApps.Metro, WPF UI)의 데모 XAML 180개를 앱 밖에서 따로 렌더하면 **155개(86%)가 오류 없이 그려진다**(`doc/07_Third_Party_Control_Verification.md`). 단 "오류 없음"이 "그림이 완전히 맞음"은 아니다(WPF UI의 강조색 버튼이 비어 보이는 사례를 확인함). 라이브러리의 컴파일된 테마 사전(`pack://…;component/…`)은 로드된 어셈블리에서 읽고, 신뢰된 폴더에서는 호스트가 `Application`을 만들어 `App.xaml` 리소스를 얹는다. **다시 빌드해 다시 불러올 때마다 호스트 메모리가 약 7MB씩 늘 수 있다**(Reload Window로 초기화).
 - Windows 전용. x64.
 
 ## 8. 문제 해결

@@ -4,7 +4,9 @@ param(
     [Parameter(Mandatory)][string]$OutCsv,
     [int]$TimeoutMs = 60000,
     [int]$Max = 400,
-    [switch]$Untrusted
+    [switch]$Untrusted,
+    # 파일마다 호스트를 새로 띄운다. 앞선 요청이 남긴 상태(예: App.xaml 렌더가 만드는 Application)가 뒤 결과에 영향을 주지 못하게 한다(느리지만 단독 실행과 같다).
+    [switch]$FreshHost
 )
 # 한 호스트 프로세스에 프로젝트의 .xaml 파일들을 차례로 렌더 요청하고 결과(ok/오류/tier/경고)를 CSV로 남긴다. 호스트가 죽으면 다시 띄운다.
 $allow = -not $Untrusted
@@ -26,6 +28,10 @@ $p = Start-Host
 $id = 0
 foreach ($f in $files) {
     $id++
+    if ($FreshHost -and $id -gt 1) {
+        try { $p.StandardInput.WriteLine('{"id":999998,"method":"shutdown"}'); $null = $p.WaitForExit(5000); if (-not $p.HasExited) { $p.Kill() } } catch {}
+        $p = Start-Host
+    }
     $xaml = [IO.File]::ReadAllText($f.FullName)
     $req = @{ id = $id; method = 'render'; params = @{ xaml = [string]$xaml; filePath = [string]$f.FullName; allowProjectAssemblies = $allow } } | ConvertTo-Json -Depth 5 -Compress
     $sw = [Diagnostics.Stopwatch]::StartNew()

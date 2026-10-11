@@ -85,7 +85,9 @@ public static class ProjectTier
         var constructor = type.GetConstructor(
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public,
             [typeof(System.Xaml.XamlSchemaContextSettings), typeof(bool)]);
-        return constructor?.Invoke([new System.Xaml.XamlSchemaContextSettings(), false]) as System.Xaml.XamlSchemaContext;
+        // 같은 개수의 인자를 받는 생성자가 여럿인 마크업 확장(예: WPF UI의 `{ui:SymbolIcon ...}`)도 허용한다(기본값 false면 파싱 오류).
+        var settings = new System.Xaml.XamlSchemaContextSettings { SupportMarkupExtensionsWithDuplicateArity = true };
+        return constructor?.Invoke([settings, false]) as System.Xaml.XamlSchemaContext;
     }
 
     /// <summary>Tier 0일 때 사용자에게 보여 줄 이유 문장(자리표시자가 생긴 경우의 경고 메시지).</summary>

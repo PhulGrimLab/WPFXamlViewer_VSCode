@@ -47,10 +47,12 @@ public sealed class UserAssemblies
     private sealed class UserLoadContext : AssemblyLoadContext
     {
         private readonly AssemblyDependencyResolver _resolver;
+        private readonly string _mainDirectory;
 
-        public UserLoadContext(string mainAssemblyPath) : base("XamlViewer.User:" + Path.GetFileName(mainAssemblyPath), isCollectible: true)
+        public UserLoadContext(string mainAssemblyPath) : base("XamlViewer.User:" + Path.GetFileName(mainAssemblyPath), isCollectible: false)
         {
             _resolver = new AssemblyDependencyResolver(mainAssemblyPath);
+            _mainDirectory = Path.GetDirectoryName(mainAssemblyPath)!;
         }
 
         /// <summary>
@@ -60,6 +62,7 @@ public sealed class UserAssemblies
         /// </summary>
         public void PreloadDependencies(Assembly main)
         {
+            PreloadSiblingAssemblies();
             foreach (var reference in main.GetReferencedAssemblies())
             {
                 var path = _resolver.ResolveAssemblyToPath(reference);
@@ -77,6 +80,25 @@ public sealed class UserAssemblies
                     {
                         // 이 의존성은 지금 쓸 수 없다: 실제 사용 시점의 오류에 맡긴다.
                     }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 주 어셈블리와 같은 폴더의 관리 어셈블리(`*.dll`)를 모두 이 컨텍스트에 로드한다. XAML에서만 쓰는 라이브러리(예: URI xmlns로 `XmlnsDefinition`이 매핑된 컨트롤)는
+        /// 컴파일된 주 어셈블리의 참조 목록에 없을 수 있어 참조만 따라가서는 놓친다. 네이티브 DLL/로드 불가 파일은 건너뛴다. 필요할 때만 호출한다(느리다).
+        /// </summary>
+        private void PreloadSiblingAssemblies()
+        {
+            foreach (var path in Directory.GetFiles(_mainDirectory, "*.dll", SearchOption.TopDirectoryOnly))
+            {
+                try
+                {
+                    LoadFromAssemblyPath(path);
+                }
+                catch (Exception ex) when (ex is IOException or BadImageFormatException or FileLoadException or UnauthorizedAccessException)
+                {
+                    // 네이티브 DLL이거나 지금 쓸 수 없는 파일: 건너뛴다.
                 }
             }
         }
@@ -259,7 +281,14 @@ public sealed class UserAssemblies
     private void Unload(string projectFile, LoadedProject project)
     {
         _projects.Remove(projectFile);
-        project.Context.Unload();
+        if (project.Context.IsCollectible)
+        {
+            project.Context.Unload();
+        }
+        else
+        {
+            // 실험: 수집 불가 컨텍스트는 Unload할 수 없다(이전 어셈블리는 프로세스가 끝날 때까지 남는다).
+        }
         TryDeleteDirectory(project.TempDirectory); // 잠금이 남아 실패해도 프로세스 종료 시 다시 시도한다.
     }
 

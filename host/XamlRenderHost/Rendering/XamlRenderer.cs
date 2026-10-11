@@ -104,6 +104,23 @@ public static class XamlRenderer
     {
         var preprocessed = XamlPreprocessor.Process(request.Xaml, request.FilePath, tier.Tier == 1 ? tier.AssemblyName : null, schema, tagElements);
         var warnings = new List<RenderWarning>(preprocessed.Warnings);
+        if (tier.Tier == 1)
+        {
+            // 앱 수준 리소스 조회(라이브러리의 컴파일된 테마가 Application.Current.Resources를 본다)도 실제 앱처럼 동작하게 한다.
+            var applicationFailure = HostApplication.ApplyResources(preprocessed.ApplicationResourcesXml, schema, tier.AssemblyPath);
+            if (applicationFailure != null)
+            {
+                warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, $"앱 리소스를 Application에 적용하지 못했습니다: {applicationFailure}", null, null));
+            }
+            else
+            {
+                // 적용했거나 앱 리소스 없음.
+            }
+        }
+        else
+        {
+            // Tier 0: 프로젝트 어셈블리가 없어 앱 수준 리소스를 만들지 않는다.
+        }
         var (root, finalXaml) = ParseWithUserFailureRecovery(preprocessed.Xaml, schema, warnings);
         if (tier.Tier == 0 && warnings.Any(w => w.Code == WarningCodes.PlaceholderUsed))
         {
@@ -313,7 +330,7 @@ public static class XamlRenderer
     /// schema가 없으면 WPF 기본 경로(XamlReader.Parse), 있으면(Tier 1) 그 스키마 컨텍스트로 XamlXmlReader를 만들어 로드한다.
     /// 후자는 줄/열 정보를 켜서 오류가 같은 위치 정보를 갖게 한다.
     /// </summary>
-    private static object ParseObject(string xaml, System.Xaml.XamlSchemaContext? schema)
+    internal static object ParseObject(string xaml, System.Xaml.XamlSchemaContext? schema)
     {
         if (schema == null)
         {

@@ -75,6 +75,7 @@ public static partial class XamlPreprocessor
         }
 
         var dictionaryXml = BuildApplicationDictionary(appPath, context);
+        context.ApplicationResourcesXml = dictionaryXml;
         return dictionaryXml == null ? xaml : InsertMergedDictionary(xaml, dictionaryXml);
     }
 
