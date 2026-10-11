@@ -590,6 +590,12 @@ public static partial class XamlPreprocessor
         return needsAssembly ? $"{xmlNamespace};assembly={context.ProjectAssemblyName}" : xmlNamespace;
     }
 
+    /// <summary>Microsoft/표준이 아닌 URI 형태의 xmlns 값인가(라이브러리가 XmlnsDefinition으로 정의했을 수 있는 네임스페이스).</summary>
+    private static bool IsCustomXmlnsUri(string xmlNamespace)
+        => (xmlNamespace.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || xmlNamespace.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            && !xmlNamespace.StartsWith("http://schemas.microsoft.com/", StringComparison.OrdinalIgnoreCase)
+            && !xmlNamespace.StartsWith("http://schemas.openxmlformats.org/", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>xmlns 값(`clr-namespace:X;assembly=이름`)에서 어셈블리 이름을 꺼낸다. clr-namespace가 아니거나 지정이 없으면 null.</summary>
     private static string? ReferencedAssemblyName(string xmlNamespace)
     {
@@ -619,9 +625,14 @@ public static partial class XamlPreprocessor
             {
                 XamlRenderHost.Projects.UserAssemblies.Instance.EnsureReferencedAssemblyLoaded(referenced);
             }
+            else if (IsCustomXmlnsUri(reader.Value))
+            {
+                // 라이브러리가 XmlnsDefinition으로 매핑한 URI(예: MahApps/HandyControl/MaterialDesign): 스키마가 로드된 어셈블리에서만 찾으므로 의존성을 모두 로드한다.
+                XamlRenderHost.Projects.UserAssemblies.Instance.PreloadAllDependencies();
+            }
             else
             {
-                // 어셈블리 지정 없음(프로젝트 어셈블리 자신이거나 clr-namespace가 아님).
+                // 어셈블리 지정 없음(프로젝트 어셈블리 자신이거나 표준 네임스페이스).
             }
         }
         else

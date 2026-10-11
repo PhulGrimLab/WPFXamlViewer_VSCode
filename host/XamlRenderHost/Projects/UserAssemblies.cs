@@ -161,6 +161,22 @@ public sealed class UserAssemblies
     }
 
     /// <summary>
+    /// 로드된 모든 프로젝트의 의존 어셈블리를 지금 전부 로드한다(이미 로드된 것은 그대로).
+    /// `xmlns="http://..."`처럼 `XmlnsDefinition` 특성으로 매핑된 URI 네임스페이스는 WPF 스키마가 **이미 로드된** 어셈블리에서만 찾으므로,
+    /// 그런 xmlns가 나왔을 때만 호출한다(평소에는 첫 렌더를 느리게 하므로 호출하지 않는다).
+    /// </summary>
+    public void PreloadAllDependencies()
+    {
+        lock (_gate)
+        {
+            foreach (var project in _projects.Values)
+            {
+                project.Context.PreloadDependencies(project.Assembly);
+            }
+        }
+    }
+
+    /// <summary>
     /// XAML이 `xmlns="clr-namespace:...;assembly=이름"`으로 참조한 어셈블리를 로드된 프로젝트 컨텍스트에서 미리 로드한다(이미 로드됐으면 그대로).
     /// WPF 스키마 컨텍스트는 이미 로드된 어셈블리 중에서 이름으로 찾으므로, 참조되는 시점에 로드해 두어야 한다.
     /// 프로젝트가 가져오지 않는 이름(프레임워크 등)이나 로드 실패는 무시한다(해석 실패는 이후 XAML 오류로 보고된다).
