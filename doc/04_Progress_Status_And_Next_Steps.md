@@ -35,7 +35,7 @@
 - "오류 없이 렌더됨"이 "그림이 맞음"은 아니다. 그림을 직접 열어 본 파일은 소수뿐이다.
 
 ### 0-4. 앞으로 할 일 (순서대로)
-1. **문서 갱신 → 커밋 → 확장 재설치**: 재측정은 끝났다(0-3). `doc/07` 4절 표·남은 실패 목록과 `User_Guide` 7절의 숫자(현재 "160개(89%)", 실패 20건으로 낡았음)를 **165/180(92%), 실패 15건**으로 고치고, 커밋/푸시한 뒤 확장을 재설치한다(0-1 참고). (재측정이 다시 필요하면 0-5의 명령을 쓴다.)
+1. **확장 재설치**(0-1 참고): 재측정(0-3)과 문서 갱신(`doc/07` 4절 표·남은 실패 15건·고친 것 12~13번, `User_Guide`의 165/180)은 **끝나서 커밋/푸시했다.** 남은 것은 최신 코드(`7ea523c`)를 VS Code에 설치하는 일뿐이다. (재측정이 다시 필요하면 0-5의 명령을 쓴다.)
 2. **문서 기준 상대 경로 `Icon`**(4건: MahApps `MainWindow`/`CleanWindowDemo`/`StyleSetsDemo`, MaterialDesign `MainWindow`의 `favicon.ico`): `Window Icon="x.ico"`, `Icon="..\x.ico"`를 프로젝트 어셈블리의 `;component/` 경로로 바꾸거나(프로젝트 폴더 기준 경로 계산 필요), 못 풀면 그 속성만 제거하고 경고.
 3. **공유 프로젝트(Shared)의 XAML**(HandyControl 149개 전부 실패): 가장 가까운 `.csproj`에 빌드 산출물이 없으면 같은 폴더 트리를 참조하는 다른 프로젝트의 산출물을 찾는다(`ProjectLocator`).
 4. **남은 개별 실패**: `MetroWindow`의 `Resources` 중복 설정(2), 컴파일된 사전 전용 `x:Shared`(1), WPF UI `SettingsPage`의 `StaticResource` 키(1). 미리보기 대상이 아닌 `App.xaml`/`ResourceDictionary` 루트(7)는 정상이다.

@@ -61,10 +61,10 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 | 저장소 | 파일 수 | 오류 없이 렌더 | 처음(수정 전) |
 |---|---|---|---|
 | MahApps.Metro | 40 | 32 (80%) | 12 |
-| MaterialDesignInXamlToolkit | 54 | 48 (89%) | 3 |
-| WPF UI (Gallery) | 86 | 80 (93%) | 21 |
+| MaterialDesignInXamlToolkit | 54 | 52 (96%) | 3 |
+| WPF UI (Gallery) | 86 | 81 (94%) | 21 |
 | HandyControl | 149 | 측정 안 함 | 0 |
-| **합계(HandyControl 제외)** | **180** | **160 (89%)** | 36 (20%) |
+| **합계(HandyControl 제외)** | **180** | **165 (92%)** | 36 (20%) |
 
 - HandyControl은 XAML이 `Shared` 프로젝트에 있어 **가장 가까운 `.csproj`(공유 프로젝트)에 빌드 산출물이 없다.** 데모 앱 폴더에는 XAML이 0개이고, 공유 폴더의 파일은 Tier 1이 되지 않아 이번 재측정에서 제외했다(5절 3번).
 - "오류 없이 그려졌는가"만 센 값이다. 그림이 맞는지는 일부만(아래) 눈으로 확인했다.
@@ -83,6 +83,8 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 9. **앱 수준 사전 적용의 부분 실패 복구**: `internal` 변환기 같은 요소 하나가 실패해도 앱 사전 전체를 버리지 않고 그 요소만 건너뛴다(문서 안 주입과 같은 방식). 이게 없으면 8번의 훅까지 가지 못했다.
 10. **창 핸들(PresentationSource)이 필요한 컨트롤**: WPF UI `AutoSuggestBox`는 템플릿 적용 때 `(HwndSource)PresentationSource.FromVisual(this)!`로 창에 훅을 거는데, 화면 밖 렌더에는 그게 없어 `NullReferenceException`이 났다. 렌더가 실패하면 **한 번만** 숨은 메시지 전용 창(`HwndSource`)에 루트를 붙여 다시 그린다(5개 파일: `AutoSuggestBoxPage`, `IconsPage`, `NavigationViewPage`, `MainWindow`, `SandboxWindow`). 두 가지 함정이 있었다: `SizeToContent`를 쓰면 `RootVisual`을 붙이는 순간 창 메시지 콜백 안에서 동기 레이아웃이 돌아 예외가 잡히지 않고 **호스트가 `0xC000041D`로 즉사**한다(그래서 쓰지 않고 레이아웃은 우리가 `try` 안에서 돌린다). 붙인 뒤에는 `Loaded` 같은 지연 처리에서 앱 코드가 예외를 낼 수 있어(예: `PageControlDocumentation.OnLoaded`) 이 구간에서만 `Dispatcher.UnhandledException`을 가로채 무시하고 `RenderedWithHiddenWindow` 경고로 알린다. 다시 실패하면 처음 오류를 그대로 보고한다.
 11. **재빌드 시 메모리 누적 완화**: 아래 "알려진 부작용" 참고.
+12. **접두사가 붙은 핸들러 속성**: MaterialDesign의 `materialDesign:DialogHost.DialogClosingAttached="핸들러"`는 첨부 **이벤트**가 아니라 **델리게이트 타입의 첨부 속성**(`RegisterAttached`, `DialogClosingEventHandler`)이라 이벤트 판별(`IsEvent`)로는 잡히지 않았고, 핸들러 이름을 델리게이트로 만들려다 로드가 실패했다(처음에는 첨부 이벤트로 보고 고쳤지만 실제 파일이 계속 실패해 라이브러리 소스를 읽고서야 구조가 다르다는 것을 알았다). 소유자 타입을 속성의 접두사 네임스페이스에서 찾아 첨부 이벤트이거나 멤버 타입이 델리게이트면 제거한다(`RemovedEventHandler`). `Grid.Row` 같은 비델리게이트 첨부 속성은 유지한다. `Dialogs.xaml`, `Pickers.xaml`이 통과했다.
+13. **프로젝트의 `internal` 타입**: 컴파일된 앱은 같은 어셈블리의 `internal` 컨트롤/변환기를 XAML에서 쓰지만, 컴파일되지 않은 XAML을 읽을 때는 **`XamlXmlReader`가 public이 아닌 타입을 "알 수 없는 형식"으로 만들어** 로드가 실패했다. 독립 실험 프로젝트로 확인한 사실: 스키마 조회(이름/Type, 기본·WPF 컨텍스트)와 객체 쓰기는 `AccessLevel` 없이도 성공하고, 리더의 타입 해석만 막혀 있다. 그래서 처음 시도한 `XamlObjectWriterSettings.AccessLevel`(WPF 내부 로더 리플렉션)은 **효과가 없었고 그 코드는 버렸다.** 해법은 공개 API인 `XamlXmlReaderSettings.LocalAssembly = 프로젝트 어셈블리`다. **신뢰된 프로젝트(Tier 1)에서만** 설정하고 신뢰하지 않은 렌더는 자리표시자로 남는다(테스트 `T12`, `T12b`). `PopupBox.xaml`, `SmartHint.xaml`(MaterialDesign), `SettingsPage.xaml`(WPF UI)이 통과했다.
 
 **눈으로 확인한 그림**(결과 PNG를 직접 열어 봄, 6개 파일뿐이다. 나머지는 "오류 없음"만 확인했다):
 - MaterialDesign `Buttons.xaml`: Material 스타일(색 버튼, 원형/분할 버튼, 배지, 칩)이 정상으로 그려진다.
@@ -92,17 +94,16 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 - WPF UI `Views\Windows\MainWindow.xaml`(1450x802): 창 크롬(최소화/최대화/닫기), 검색창, 도구 버튼이 그려진다. 네비게이션 목록과 본문 영역은 앱 코드가 실행 중에 채우는 부분이라 **비어 있다**(정적 렌더의 한계).
 - 다른 파일에 부분적 깨짐이 얼마나 더 있는지는 측정하지 않았다.
 
-### 남은 실패 20건의 원인 (3개 합산)
+### 남은 실패 15건의 원인 (3개 합산)
 | 건수 | 원인 | 비고 |
 |---|---|---|
-| 4 | 루트가 `ResourceDictionary` | 스타일/리소스 파일이라 미리보기 대상이 아님(정상) |
-| 3 | 루트가 `Application`(`App.xaml` 자체) | 미리보기 대상이 아님(정상). 합산하면 **미리보기 대상이 아닌 파일이 7건**이다 |
-| 4 | 이미지/아이콘 리소스 | `Icon="….ico"`, `Icon="..\x.ico"`처럼 문서 기준 **상대 경로**로 프로젝트 리소스를 가리키는 `Window` 아이콘(미해결) |
-| 3 | `internal` 타입 | 프로젝트의 `internal` 변환기/컨트롤(`MaterialDesignDemo`, `Wpf.Ui.Gallery.Helpers`)은 컴파일되지 않은 XAML을 읽는 `XamlReader`가 만들지 못한다("알 수 없는 형식") |
-| 2 | 라이브러리의 **첨부 이벤트 핸들러 속성**(`materialDesign:DialogHost.DialogClosingAttached="핸들러"`) | 접두사가 붙은 이벤트 속성은 제거 대상으로 인식하지 못한다(미해결, 고칠 수 있는 범위) |
-| 2 | `MetroWindow`의 `Resources` 중복 설정 | `Window.Resources`를 직접 쓰는 `MetroWindow` 파생 XAML |
-| 1 | 컴파일된 사전 전용 `x:Shared` | 개별 사례 |
-| 1 | `StaticResource` 키 없음(WPF UI `SettingsPage`) | 앱 코드가 채우는 키로 추정, 미조사 |
+| 5 | 루트가 `ResourceDictionary` | 스타일/리소스 파일이라 미리보기 대상이 아님(정상): MahApps `XamlDisplay`, WPF UI 4개 |
+| 3 | 루트가 `Application`(`App.xaml` 자체) | 미리보기 대상이 아님(정상). 합산하면 **미리보기 대상이 아닌 파일이 8건**이다 |
+| 4 | 이미지/아이콘 리소스 | `Icon="….ico"`, `Icon="..\x.ico"`처럼 문서 기준 **상대 경로**로 프로젝트 리소스를 가리키는 `Window` 아이콘: MahApps `MainWindow`/`CleanWindowDemo`/`StyleSetsDemo`, MaterialDesign `MainWindow`(`favicon.ico`) |
+| 2 | `MetroWindow`의 `Resources` 중복 설정 | `Window.Resources`를 직접 쓰는 `MetroWindow` 파생 XAML(MahApps `FlyoutDemo`, `VSDemo`) |
+| 1 | 컴파일된 사전 전용 `x:Shared` | MahApps `OtherExamples` |
+
+(앞선 측정의 "`internal` 타입", "접두사가 붙은 첨부 핸들러", "`StaticResource` 키 없음(`SettingsPage`)"은 12·13번 수정으로 모두 해결됐다.)
 
 ### 알려진 부작용과 한계
 - **메모리**: 프로젝트 어셈블리 컨텍스트가 수집 불가라서 **산출물을 다시 빌드해 다시 불러올 때마다 이전 어셈블리가 프로세스에 남는다.** 큰 WPF 앱 프로젝트(CodeAtlas)로 재빌드를 흉내 내 측정하니 재빌드 1회당 비공개 메모리가 약 7MB 늘었다(8회 56→111MB). 호스트가 응답 없이 강제 종료되거나 VS Code **Reload Window**를 하면 초기화된다. 라이브러리 사전을 쓰는 프로젝트는 불러오는 어셈블리가 더 많아 증가량이 더 클 수 있다(측정하지 않음).
@@ -112,12 +113,10 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 - 이 숫자는 "XAML 파일 하나를 앱 밖에서 따로 그릴 수 있는가"다. 실제 앱의 데이터(DataContext)와 코드 비하인드 동작은 재현하지 않는다.
 
 ## 5. 다음 개선 후보 (아직 하지 않음)
-1. **접두사가 붙은 첨부 이벤트 핸들러 속성**(`materialDesign:DialogHost.DialogClosingAttached="…"`) 제거: 지금은 접두사 없는 이벤트 속성과 `Owner.Event`(WPF 기본 네임스페이스 소유자)만 인식한다. 소유자 타입을 속성의 접두사 네임스페이스에서 찾으면 2건이 풀린다.
-2. 문서 기준 상대 경로 이미지/아이콘(`Icon="x.ico"`, `Icon="..\x.ico"`)을 프로젝트 어셈블리의 컴파일된 리소스 경로로 바꾸기(프로젝트 폴더 기준 경로 계산 필요, 4건).
-3. 공유 프로젝트(Shared)의 XAML: 가장 가까운 `.csproj`에 산출물이 없으면 같은 폴더 트리를 참조하는 다른 프로젝트의 산출물을 찾기(HandyControl 149개).
-4. **`internal` 타입 지원**(3건): 컴파일되지 않은 XAML을 읽는 `XamlReader`는 public이 아닌 타입을 만들지 못한다. 앱 프로젝트의 `internal` 변환기/컨트롤은 흔해서 일반화할 가치가 있으나, WPF 로더가 `XamlObjectWriterSettings.AccessLevel`을 노출하지 않아 설계가 필요하다.
-5. `MetroWindow`의 `Resources` 중복 설정 등 라이브러리별 개별 사례.
-6. 라이브러리별 시작 훅(`HostApplication`의 목록)은 현재 WPF UI 하나뿐이다. 다른 라이브러리에서 비슷한 "앱 시작 코드가 채우는 값" 문제가 보이면 같은 방식으로 추가한다.
+1. 문서 기준 상대 경로 이미지/아이콘(`Icon="x.ico"`, `Icon="..\x.ico"`)을 프로젝트 어셈블리의 컴파일된 리소스 경로로 바꾸기(프로젝트 폴더 기준 경로 계산 필요, 4건).
+2. 공유 프로젝트(Shared)의 XAML: 가장 가까운 `.csproj`에 산출물이 없으면 같은 폴더 트리를 참조하는 다른 프로젝트의 산출물을 찾기(HandyControl 149개).
+3. `MetroWindow`의 `Resources` 중복 설정(2건), 컴파일된 사전 전용 `x:Shared`(1건) 같은 라이브러리별 개별 사례.
+4. 라이브러리별 시작 훅(`HostApplication`의 목록)은 현재 WPF UI 하나뿐이다. 다른 라이브러리에서 비슷한 "앱 시작 코드가 채우는 값" 문제가 보이면 같은 방식으로 추가한다.
 
 ## 6. 샘플 정리
 `WpfControlSamples`는 저장소 밖이며 약 140MB + 빌드 산출물이다. 필요 없으면 폴더째 지워도 이 저장소에는 영향이 없다.
