@@ -38,6 +38,27 @@ public class PreprocessorTests
     }
 
     [TestMethod]
+    public void X02b_PrefixedAttachedEventHandler_IsRemoved()
+    {
+        // 라이브러리의 첨부 이벤트는 접두사가 붙은 속성으로 쓴다(`materialDesign:DialogHost.DialogClosingAttached="핸들러"`).
+        // 접두사 없는 속성만 이벤트로 인식하면 핸들러 이름을 값으로 변환하려다 실패한다. 접두사가 붙어도 WPF 기본 네임스페이스의 첨부 이벤트로 같은 구조를 시험한다.
+        var xaml = $"<Button {Ns} xmlns:p=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" p:Mouse.MouseEnter=\"OnEnter\" Width=\"40\" Height=\"20\"/>";
+        var result = RenderTestHelper.Render(xaml);
+        Assert.AreEqual(40, result.PixelWidth);
+        Assert.AreEqual(1, Codes(result).Count(c => c == WarningCodes.RemovedEventHandler), "첨부 이벤트 핸들러 속성 하나가 제거되어야 한다");
+    }
+
+    [TestMethod]
+    public void X02c_PrefixedAttachedNonEvent_IsKept()
+    {
+        // 접두사가 붙은 첨부 **속성**(이벤트가 아닌 것)은 제거하면 안 된다: Grid.Row 같은 값은 그대로 적용된다.
+        var xaml = $"<Grid {Ns} xmlns:p=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Width=\"50\" Height=\"50\"><Grid.RowDefinitions><RowDefinition Height=\"20\"/><RowDefinition Height=\"30\"/></Grid.RowDefinitions><Border p:Grid.Row=\"1\" Background=\"Red\"/></Grid>";
+        var result = RenderTestHelper.Render(xaml);
+        Assert.AreEqual(50, result.PixelWidth);
+        Assert.AreEqual(0, Codes(result).Count(c => c == WarningCodes.RemovedEventHandler), "이벤트가 아닌 첨부 속성은 제거하지 않는다");
+    }
+
+    [TestMethod]
     public void X03_XCodeBlock_IsRemoved()
     {
         var xaml = $"<Grid {Ns} {XNs} Width=\"30\" Height=\"30\">\n<x:Code><![CDATA[ void Foo() {{ }} ]]></x:Code>\n</Grid>";

@@ -94,6 +94,9 @@ public static class XamlRenderer
             var schema = ProjectTier.CreateSchemaContext(tier);
             // 보안: 신뢰된(Tier 1) 렌더 구간에서만 사용자 어셈블리의 이름 해석을 허용한다(Tier 0 렌더가 앞서 로드된 사용자 어셈블리를 이름으로 불러 쓰지 못하게).
             using var trustedResolution = tier.Tier == 1 ? Projects.UserAssemblies.BeginTrustedResolution() : null;
+            // 보안: 신뢰된(Tier 1) 프로젝트의 어셈블리에 한해 internal 타입 생성을 허용한다. Tier 0에서는 null로 두어 절대 허용하지 않는다.
+            var previousAccessAssembly = _internalAccessAssembly;
+            _internalAccessAssembly = tier.Tier == 1 ? tier.Assembly : null;
             try
             {
                 return RenderCore(request, tier, schema, tagElements: true);
@@ -103,6 +106,10 @@ public static class XamlRenderer
                 // HitMap용 Uid 태그가 같은 줄의 열 위치를 밀어 놓았다. 오류 위치(특히 열)를 원본 기준으로 정확히 보고하려고
                 // 태그 없이 한 번 더 파싱한다(오류 경로에서만 드는 비용). 뜻밖에 성공하면 그 결과(HitMap 없음)를 돌려준다.
                 return RenderCore(request, tier, schema, tagElements: false);
+            }
+            finally
+            {
+                _internalAccessAssembly = previousAccessAssembly;
             }
         }
     }
@@ -372,10 +379,20 @@ public static class XamlRenderer
         else
         {
             using var stringReader = new StringReader(xaml);
-            using var xamlReader = new System.Xaml.XamlXmlReader(stringReader, schema, new System.Xaml.XamlXmlReaderSettings { ProvideLineInfo = true });
+            // LocalAssembly: 컴파일된 XAML처럼 그 어셈블리의 internal 타입(컨트롤, 변환기 등)도 이름으로 찾게 한다. 이 설정이 없으면 XamlXmlReader가 public이 아닌 타입을
+            // "알 수 없는 형식"으로 만들어 로드가 실패한다(스키마 조회/객체 생성은 문제 없고 이 리더의 타입 해석만 막는다 — 별도 실험으로 확인). 공개 API다.
+            using var xamlReader = new System.Xaml.XamlXmlReader(stringReader, schema,
+                new System.Xaml.XamlXmlReaderSettings { ProvideLineInfo = true, LocalAssembly = _internalAccessAssembly });
             return XamlReader.Load(xamlReader);
         }
     }
+
+    /// <summary>
+    /// 이 스레드의 렌더가 **신뢰된(Tier 1)** 프로젝트 어셈블리의 `internal` 타입까지 만들 수 있게 허용할 "로컬 어셈블리". 신뢰하지 않은 렌더(Tier 0)에서는 항상 null이다.
+    /// <see cref="Render"/>가 Tier 1 렌더 구간에서만 설정하고 끝나면 되돌린다.
+    /// </summary>
+    [ThreadStatic]
+    private static System.Reflection.Assembly? _internalAccessAssembly;
 
     /// <summary>XamlParseException을 XML 오류/XAML 오류로 구분해 줄/열과 함께 변환한다.</summary>
     private static XamlRenderException ConvertParseException(XamlParseException ex)

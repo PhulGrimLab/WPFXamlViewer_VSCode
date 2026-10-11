@@ -24,6 +24,10 @@
 - 신뢰하지 않은 문서(Tier 0)는 같은 프로세스에서 앞서 로드된 사용자 타입도 자리표시자로 취급한다.
 - 알려진 한계: "오류 없이 렌더"가 "그림이 완전히 맞음"은 아니다(예: WPF UI 강조색 버튼이 비어 보임, 원인 미확인).
 
+- **접두사가 붙은 핸들러 속성 제거**: 라이브러리의 첨부 멤버를 `materialDesign:DialogHost.DialogClosingAttached="핸들러"`처럼 쓰면 핸들러 이름을 델리게이트로 만들려다 로드가 실패했다. 이 멤버는 이벤트가 아니라 **델리게이트 타입의 첨부 속성**(`RegisterAttached`)이라 이벤트 판별(`IsEvent`)로는 못 잡는다. 접두사가 붙은 첨부 이벤트와 델리게이트 타입 첨부 속성을 소유자 타입의 네임스페이스에서 찾아 제거한다(`RemovedEventHandler`). 델리게이트가 아닌 첨부 속성(`Grid.Row` 등)은 유지한다. MaterialDesign `Dialogs.xaml`/`Pickers.xaml`이 렌더된다.
+
+- **프로젝트의 `internal` 타입 지원**(신뢰된 폴더): 컴파일된 앱은 같은 어셈블리의 `internal` 컨트롤/변환기를 XAML에서 쓸 수 있지만, 컴파일되지 않은 XAML을 읽을 때는 `XamlXmlReader`가 public이 아닌 타입을 "알 수 없는 형식"으로 만들어 로드가 실패했다(WPF UI Gallery의 `internal sealed` 변환기, MaterialDesign 데모의 `internal` 변환기 등). `XamlXmlReaderSettings.LocalAssembly`를 로드한 프로젝트 어셈블리로 지정해 해결했다(공개 API만 사용). 처음에는 `XamlObjectWriterSettings.AccessLevel`을 WPF 내부 로더로 넘기는 방법을 시도했으나 **효과가 없었다**(원인이 쓰기 단계가 아니라 리더의 타입 해석이라서, 순수 System.Xaml로 실험해 확인하고 그 코드는 버렸다). **신뢰하지 않은 렌더(Tier 0)에서는 적용하지 않는다**(자리표시자, 테스트 `T12b`).
+
 ### 보안 수정
 - **병합 사전/`App.xaml` 경로 탈출 차단**(신뢰하지 않은 폴더의 XAML이 로컬 파일을 읽어 인라인할 수 있었다): `ResourceDictionary Source`에 절대 경로(`C:\…`)를 쓰면 `Path.Combine`이 기준 폴더를 무시했고, `..\`로 프로젝트 밖 파일을 읽었으며, 프로젝트 안의 정션/심볼릭 링크로도 우회됐다. 이제 프로젝트 경계(가장 가까운 `.csproj`/`.sln`/`.slnx`/`.git`) 안에서만, 링크를 지나지 않는 파일만 읽는다. 재현 테스트 3개(`RD07`~`RD09`)로 취약점을 확인한 뒤 수정했다.
 - 신뢰하지 않은 렌더(Tier 0)가 앞서 신뢰된 렌더가 올린 `Application.Resources`(사용자 타입 인스턴스 포함)와 이미 로드된 사용자 어셈블리의 이름 해석을 쓰지 못하게 했다.

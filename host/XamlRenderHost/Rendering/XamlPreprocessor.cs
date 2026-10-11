@@ -542,6 +542,12 @@ public static partial class XamlPreprocessor
             {
                 code = WarningCodes.RemovedEventHandler;
             }
+            else if (reader.NamespaceURI.Length > 0 && reader.LocalName.Contains('.')
+                && IsPrefixedAttachedEvent(context.Schema, WithProjectAssembly(reader.NamespaceURI, context), reader.LocalName))
+            {
+                // 라이브러리의 첨부 이벤트: `materialDesign:DialogHost.DialogClosingAttached="핸들러"`처럼 접두사가 붙어 소유자 타입이 그 네임스페이스에 있다.
+                code = WarningCodes.RemovedEventHandler;
+            }
             else
             {
                 // 유지할 속성.
@@ -758,6 +764,36 @@ public static partial class XamlPreprocessor
         {
             var ownerType = schema.GetXamlType(new XamlTypeName(PresentationNamespace, attributeLocal[..dot]));
             return ownerType is { IsUnknown: false } && ownerType.GetAttachableMember(attributeLocal[(dot + 1)..]) is { IsEvent: true };
+        }
+    }
+
+    /// <summary>
+    /// 접두사가 붙은 속성(`접두사:소유자.멤버`)이 코드 비하인드 핸들러를 가리키는 첨부 멤버인지 확인한다. 소유자 타입은 속성의 네임스페이스
+    /// (<paramref name="attributeNamespace"/>)에서 찾는다(`IsEventAttribute`의 `Owner.Event` 분기는 WPF 기본 네임스페이스에서만 찾는다).
+    /// 두 가지가 해당한다: ① 첨부 **이벤트** ② **델리게이트 타입의 첨부 속성**(예: MaterialDesign `DialogHost.DialogClosingAttached`는 `RegisterAttached`로 등록한
+    /// `DialogClosingEventHandler` 속성이라 `IsEvent`가 false지만 XAML에는 핸들러 메서드 이름을 쓴다). 둘 다 코드 비하인드 없이는 값을 만들 수 없다.
+    /// 소유자나 멤버를 못 찾으면 false.
+    /// </summary>
+    private static bool IsPrefixedAttachedEvent(XamlSchemaContext schema, string attributeNamespace, string attributeLocal)
+    {
+        var dot = attributeLocal.IndexOf('.');
+        if (dot <= 0 || dot == attributeLocal.Length - 1)
+        {
+            return false;
+        }
+        else
+        {
+            var ownerType = schema.GetXamlType(new XamlTypeName(attributeNamespace, attributeLocal[..dot]));
+            if (ownerType is not { IsUnknown: false })
+            {
+                return false;
+            }
+            else
+            {
+                var member = ownerType.GetAttachableMember(attributeLocal[(dot + 1)..]);
+                return member is { IsEvent: true }
+                    || (member?.Type?.UnderlyingType is { } memberType && typeof(Delegate).IsAssignableFrom(memberType));
+            }
         }
     }
 

@@ -161,6 +161,46 @@ public class UserProjectTests
     }
 
     [TestMethod]
+    public void T12_TrustedProject_InternalTypes_AreCreated()
+    {
+        // 신뢰된 프로젝트의 internal 타입(컨트롤, 리소스 사전의 변환기)도 만들 수 있어야 한다. 기본 XamlReader는 public이 아닌 타입을 못 만든다.
+        using var project = UserProjectFixture.Create();
+        var xaml = $"<StackPanel {Ns} xmlns:s=\"clr-namespace:SampleControls;assembly=SampleControls\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">"
+            + "<StackPanel.Resources><s:InternalConverter x:Key=\"Conv\"/></StackPanel.Resources><s:InternalBox/></StackPanel>";
+        var result = Render(project, xaml);
+        Assert.AreEqual(1, result.Project!.Tier);
+        Assert.AreEqual(33, result.PixelWidth, "internal 컨트롤(폭 33)이 실제로 만들어져야 한다(자리표시자/오류가 아니라)");
+        Assert.IsEmpty(Codes(result), "경고 없이 그려져야 한다");
+    }
+
+    [TestMethod]
+    public void T12b_UntrustedRender_NeverCreatesInternalTypes()
+    {
+        // 보안: 신뢰하지 않은 렌더(Tier 0)는 같은 프로세스에 로드된 사용자 어셈블리의 internal 타입도 만들면 안 된다(자리표시자).
+        using var project = UserProjectFixture.Create();
+        var xaml = $"<StackPanel {Ns} xmlns:s=\"clr-namespace:SampleControls;assembly=SampleControls\"><s:InternalBox/></StackPanel>";
+        var trusted = Render(project, xaml, allow: true);
+        Assert.AreEqual(33, trusted.PixelWidth, "신뢰된 렌더에서는 만들어진다");
+
+        var untrusted = Render(project, xaml, allow: false);
+        Assert.AreEqual(0, untrusted.Project!.Tier);
+        CollectionAssert.Contains(Codes(untrusted), WarningCodes.PlaceholderUsed, "신뢰하지 않으면 자리표시자여야 한다");
+    }
+
+    [TestMethod]
+    public void T11_DelegateTypedAttachedProperty_HandlerName_IsRemovedButOtherAttachedValuesKept()
+    {
+        // 라이브러리(MaterialDesign DialogHost.DialogClosingAttached 등)의 델리게이트 타입 첨부 속성에 핸들러 이름을 쓴 XAML:
+        // 코드 비하인드가 없어 이름을 델리게이트로 만들 수 없으니 그 속성만 제거해야 한다. 델리게이트가 아닌 첨부 속성은 그대로 둔다.
+        using var project = UserProjectFixture.Create();
+        var xaml = Xaml("<Button s:AttachedHandlers.Closing=\"OnClosing\" s:AttachedHandlers.Count=\"3\" Width=\"50\" Height=\"20\"/>");
+        var result = Render(project, xaml);
+        Assert.AreEqual(1, result.Project!.Tier);
+        Assert.AreEqual(50, result.PixelWidth, "버튼이 그려져야 한다(핸들러 속성 때문에 로드가 실패하면 안 된다)");
+        Assert.AreEqual(1, Codes(result).Count(c => c == WarningCodes.RemovedEventHandler), "델리게이트 타입 첨부 속성 하나만 제거된다(Count는 유지)");
+    }
+
+    [TestMethod]
     public void T09b_UntrustedRender_CannotSeeAppResourcesAppliedByEarlierTrustedRender()
     {
         // 보안(심층 방어): 신뢰된 렌더가 Application.Resources에 올린 리소스(사용자 타입 인스턴스를 담을 수 있다)를
