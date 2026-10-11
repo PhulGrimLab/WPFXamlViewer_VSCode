@@ -28,3 +28,9 @@ export const PREVIEW_VIEW_TYPE = 'wpfXamlViewer.preview';
 
 /** 호스트 로그 파일 하위 폴더 이름(globalStorage 아래). */
 export const HOST_LOG_DIR_NAME = 'logs';
+
+/** 설정 섹션 이름. */
+export const CONFIG_SECTION = 'wpfXamlViewer';
+
+/** `.xaml` 에디터가 활성화될 때 미리보기를 자동으로 여는지(기본 true). */
+export const CONFIG_AUTO_OPEN = 'autoOpenPreview';

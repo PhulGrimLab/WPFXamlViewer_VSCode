@@ -48,7 +48,17 @@
         "command": "wpfXamlViewer.openPreview",
         "title": "WPF XAML: Open Preview"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "WPF XAML Live Preview",
+      "properties": {
+        "wpfXamlViewer.autoOpenPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": ".xaml 파일을 열면 미리보기를 자동으로 연다. 이미 열린 미리보기가 있으면 재사용해 갱신한다."
+        }
+      }
+    }
   },
   "capabilities": {
     "untrustedWorkspaces": {

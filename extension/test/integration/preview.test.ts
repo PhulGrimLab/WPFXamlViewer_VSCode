@@ -47,6 +47,11 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         assert.ok(commands.includes(COMMAND_OPEN_PREVIEW));
     });
 
+    it('I-01b .xaml을 열기만 해도(명령 실행 없이) 미리보기가 자동으로 열려 그려진다', async () => {
+        await waitUntil(() => api.getPreviewState().lastImageSize !== undefined);
+        assert.deepStrictEqual(api.getPreviewState().lastImageSize, { width: 120, height: 40 });
+    });
+
     it('I-02 Open Preview: 웹뷰가 이미지를 그리고 크기를 회신한다', async () => {
         await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
         await waitUntil(() => api.getPreviewState().lastImageSize !== undefined);

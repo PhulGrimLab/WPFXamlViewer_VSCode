@@ -1,6 +1,6 @@
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
-import { PREVIEW_VIEW_TYPE, RENDER_DEBOUNCE_MS } from './constants';
+import { CONFIG_AUTO_OPEN, CONFIG_SECTION, PREVIEW_VIEW_TYPE, RENDER_DEBOUNCE_MS } from './constants';
 import { Debouncer } from './debouncer';
 import { toZeroBasedPosition } from './diagnostics';
 import { HitElement, pickElementAt, pickElementAtCursor } from './hitTest';
@@ -61,11 +61,13 @@ export class PreviewController implements vscode.Disposable {
                 this._renderNow();
             }),
             vscode.window.onDidChangeActiveTextEditor((editor) => {
-                if (this._panel && editor && this._isXaml(editor.document) && editor.document !== this._document) {
+                if (editor && this._isXaml(editor.document) && (this._panel || this._isAutoOpenEnabled())) {
+                    // 패널이 있으면 재사용해 갱신하고(같은 문서로 돌아와도 새로 그린다), 없으면 자동으로 연다.
                     this._document = editor.document;
+                    this._panel ??= this._createPanel();
                     this._renderNow();
                 } else {
-                    // 패널이 없거나 XAML이 아닌 에디터로 바뀜: 마지막 미리보기를 유지한다.
+                    // XAML이 아닌 에디터로 바뀌었거나 패널이 없는데 자동 열기가 꺼짐: 마지막 미리보기를 유지한다.
                 }
             }),
             vscode.window.onDidChangeTextEditorSelection((e) => {
@@ -158,6 +160,10 @@ export class PreviewController implements vscode.Disposable {
         this._diagnostics.dispose();
         this._status.dispose();
         this._subscriptions.forEach((s) => s.dispose());
+    }
+
+    private _isAutoOpenEnabled(): boolean {
+        return vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>(CONFIG_AUTO_OPEN, true);
     }
 
     private _isXaml(document: vscode.TextDocument): boolean {

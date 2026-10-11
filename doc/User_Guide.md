@@ -21,7 +21,7 @@
 필요한 것: **.NET SDK 10**, **.NET 10 Desktop Runtime**(미리보기 호스트 실행용), VS Code, 이 확장. Visual Studio는 필요 없다.
 
 1. 프로젝트 만들기: `dotnet new wpf -n MyApp -o MyApp --framework net10.0` 후 VS Code로 폴더를 연다.
-2. `MainWindow.xaml`을 열고 명령 팔레트(`Ctrl+Shift+P`)에서 **WPF XAML: Open Preview** 를 실행한다. 에디터 옆에 미리보기가 열린다.
+2. `MainWindow.xaml`을 열고 명령 팔레트(`Ctrl+Shift+P`)에서 **WPF XAML: Open Preview** 를 실행한다. 에디터 옆에 미리보기가 열린다. 기본값에서는 `.xaml` 파일을 열거나 다른 `.xaml` 탭으로 옮기기만 해도 미리보기가 자동으로 열리고(이미 열린 패널은 재사용해 갱신), 끄려면 설정 `wpfXamlViewer.autoOpenPreview`를 `false`로 한다.
 3. XAML을 편집한다. 300ms 동안 입력이 멈추면 자동으로 다시 그린다. 오류가 있으면 Problems 패널에 표시되고 미리보기는 마지막 정상 이미지를 유지한다.
 4. 사용자 컨트롤(`local:MyControl`)을 실제로 그리려면 프로젝트를 한 번 **빌드**(`dotnet build`)하고 **폴더를 신뢰**한다(5절).
 5. 앱 실행/디버그는 `dotnet run` 또는 C# 확장의 디버거(F5)를 쓴다. 코드(`.cs`)를 바꿨다면 다시 `dotnet build` 해야 미리보기의 사용자 컨트롤에 반영된다.
