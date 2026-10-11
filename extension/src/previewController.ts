@@ -60,16 +60,7 @@ export class PreviewController implements vscode.Disposable {
                 // 폴더를 신뢰하는 순간 사용자 컨트롤을 실제로 그리도록 다시 렌더한다.
                 this._renderNow();
             }),
-            vscode.window.onDidChangeActiveTextEditor((editor) => {
-                if (editor && this._isXaml(editor.document) && (this._panel || this._isAutoOpenEnabled())) {
-                    // 패널이 있으면 재사용해 갱신하고(같은 문서로 돌아와도 새로 그린다), 없으면 자동으로 연다.
-                    this._document = editor.document;
-                    this._panel ??= this._createPanel();
-                    this._renderNow();
-                } else {
-                    // XAML이 아닌 에디터로 바뀌었거나 패널이 없는데 자동 열기가 꺼짐: 마지막 미리보기를 유지한다.
-                }
-            }),
+            vscode.window.onDidChangeActiveTextEditor((editor) => this.handleActiveEditor(editor)),
             vscode.window.onDidChangeTextEditorSelection((e) => {
                 if (e.textEditor.document === this._document) {
                     this._highlightForCursor(e.selections[0].active);
@@ -78,6 +69,21 @@ export class PreviewController implements vscode.Disposable {
                 }
             }),
         );
+    }
+
+    /**
+     * 활성 에디터가 바뀌었을 때(또는 활성화 직후 이미 열려 있던 에디터에 대해) 호출한다. XAML이면 패널을 재사용해 갱신하고
+     * (같은 문서로 돌아와도 새로 그린다), 패널이 없으면 자동 열기 설정에 따라 연다. 활성화 이벤트가 에디터 전환보다 늦게 와서
+     * 첫 파일의 전환 이벤트를 놓치므로 activate가 직접 한 번 호출한다.
+     */
+    handleActiveEditor(editor: vscode.TextEditor | undefined): void {
+        if (editor && this._isXaml(editor.document) && (this._panel || this._isAutoOpenEnabled())) {
+            this._document = editor.document;
+            this._panel ??= this._createPanel();
+            this._renderNow();
+        } else {
+            // XAML이 아닌 에디터이거나 패널이 없는데 자동 열기가 꺼짐: 마지막 미리보기를 유지한다.
+        }
     }
 
     /** 테스트/진단용: 지금까지 반영한 렌더 횟수. */

@@ -91,6 +91,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         { dispose: () => { void client.dispose(); } },
         vscode.commands.registerCommand(COMMAND_OPEN_PREVIEW, () => controller.open()),
     );
+    controller.handleActiveEditor(vscode.window.activeTextEditor);
     api.hostFound = true;
     api.hostPath = hostExe;
     api.getPreviewState = () => ({
