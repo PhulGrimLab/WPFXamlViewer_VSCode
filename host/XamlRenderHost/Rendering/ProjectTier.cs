@@ -56,10 +56,11 @@ public static class ProjectTier
     }
 
     /// <summary>
-    /// Tier 1용 XamlSchemaContext를 **렌더마다 새로** 만든다. 참조 목록 = 기본 컨텍스트의 어셈블리(WPF/프레임워크) + 이번에 로드한
-    /// 사용자 어셈블리와 그 컨텍스트의 의존 어셈블리. 이렇게 하는 이유: ① WPF의 공유 스키마 컨텍스트는 어셈블리를 이름으로 찾고 결과를
-    /// 캐시하므로 DLL을 다시 로드해도 옛 타입을 계속 쓴다 ② 서로 다른 프로젝트/버전이 같은 어셈블리 이름을 가져도 섞이지 않는다.
-    /// Tier 0이면 null(WPF 기본 경로 사용).
+    /// Tier 1용 XamlSchemaContext를 **렌더마다 새로** 만든다. 이렇게 하는 이유: ① WPF의 공유 스키마 컨텍스트는 어셈블리를 이름으로 찾고
+    /// 결과를 캐시하므로 DLL을 다시 로드해도 옛 타입을 계속 쓴다 ② 서로 다른 프로젝트/버전이 같은 어셈블리 이름을 가져도 섞이지 않는다.
+    /// 일반 <see cref="System.Xaml.XamlSchemaContext"/>는 WPF 규칙이 없어 ControlTemplate의 VisualTree 설정이 실패하므로(FrameworkElementFactory
+    /// 변환 오류), WPF 내부 `WpfSharedXamlSchemaContext`를 새 인스턴스로 만든다(어셈블리는 기본 컨텍스트의 Resolving → <see cref="UserAssemblies"/>가 찾는다).
+    /// 그 타입을 못 만들면 참조 목록(기본 컨텍스트의 어셈블리 + 사용자 컨텍스트의 어셈블리) 방식으로 되돌린다. Tier 0이면 null(WPF 기본 경로 사용).
     /// </summary>
     public static System.Xaml.XamlSchemaContext? CreateSchemaContext(ProjectTierInfo info)
     {
@@ -69,12 +70,22 @@ public static class ProjectTier
         }
         else
         {
-            var references = AppDomain.CurrentDomain.GetAssemblies()
-                .Where(a => !a.IsDynamic && System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(a) == System.Runtime.Loader.AssemblyLoadContext.Default)
-                .Concat(UserAssemblies.GetContextAssemblies(info.Assembly))
-                .Distinct();
-            return new System.Xaml.XamlSchemaContext(references);
+            return CreateWpfSchemaContext()
+                ?? new System.Xaml.XamlSchemaContext(AppDomain.CurrentDomain.GetAssemblies()
+                    .Where(a => !a.IsDynamic && System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(a) == System.Runtime.Loader.AssemblyLoadContext.Default)
+                    .Concat(UserAssemblies.GetContextAssemblies(info.Assembly))
+                    .Distinct());
         }
+    }
+
+    /// <summary>WPF 내부 `WpfSharedXamlSchemaContext(XamlSchemaContextSettings, bool useV3Rules)`를 새로 만든다. 없으면 null.</summary>
+    private static System.Xaml.XamlSchemaContext? CreateWpfSchemaContext()
+    {
+        var type = System.Windows.Markup.XamlReader.GetWpfSchemaContext().GetType();
+        var constructor = type.GetConstructor(
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public,
+            [typeof(System.Xaml.XamlSchemaContextSettings), typeof(bool)]);
+        return constructor?.Invoke([new System.Xaml.XamlSchemaContextSettings(), false]) as System.Xaml.XamlSchemaContext;
     }
 
     /// <summary>Tier 0일 때 사용자에게 보여 줄 이유 문장(자리표시자가 생긴 경우의 경고 메시지).</summary>

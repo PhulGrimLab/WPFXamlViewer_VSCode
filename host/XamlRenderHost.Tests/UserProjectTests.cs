@@ -156,6 +156,18 @@ public class UserProjectTests
     }
 
     [TestMethod]
+    public void T10_Tier1_ControlTemplateVisualTreeLoads()
+    {
+        // Tier 1의 스키마 컨텍스트가 WPF 것이 아니면 ControlTemplate의 VisualTree 설정이 실패한다(FrameworkElementFactory 변환 오류).
+        using var project = UserProjectFixture.Create();
+        var xaml = $"<Button {Ns} Width=\"50\" Height=\"20\"><Button.Template><ControlTemplate TargetType=\"Button\"><Border Background=\"Red\"/></ControlTemplate></Button.Template></Button>";
+        var result = Render(project, xaml);
+        Assert.AreEqual(1, result.Project!.Tier);
+        Assert.AreEqual(50, result.PixelWidth);
+        Assert.IsEmpty(Codes(result));
+    }
+
+    [TestMethod]
     public void T08_NoProject_ReportsNoProject()
     {
         var directory = Path.Combine(Path.GetTempPath(), "xamlviewer-noproj-" + Guid.NewGuid().ToString("N"));
