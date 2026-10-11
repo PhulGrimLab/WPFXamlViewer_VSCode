@@ -23,18 +23,19 @@
 6. **접두사가 붙은 델리게이트 첨부 속성 제거**, **신뢰된 프로젝트의 `internal` 타입 지원**(`XamlXmlReaderSettings.LocalAssembly`)(`7ea523c`).
 
 ### 0-3. 라이브러리 일괄 렌더 수치 (파일마다 새 호스트, 오류 없이 렌더된 비율)
-| 저장소 | 처음 | 마지막 **완전** 측정(접두사 속성 수정 포함) |
+| 저장소 | 처음 | 최종 측정(최신 호스트 `7ea523c`, 접두사 속성 + `internal` 수정 포함, `-FreshHost`) |
 |---|---|---|
 | MahApps.Metro | 12/40 | 32/40 |
-| MaterialDesign | 3/54 | 50/54 |
-| WPF UI | 21/86 | 80/86 |
-| 합계(HandyControl 제외) | 36/180 (20%) | **162/180 (90%)** |
+| MaterialDesign | 3/54 | **52/54** |
+| WPF UI | 21/86 | **81/86** |
+| 합계(HandyControl 제외) | 36/180 (20%) | **165/180 (92%)** |
 
-- **`internal` 타입 수정까지 포함한 재측정(최신 호스트, `-FreshHost`)은 일부만 끝났다**: **MahApps 32/40**(변화 없음)과 **MaterialDesign 52/54**(`PopupBox.xaml`, `SmartHint.xaml`이 새로 통과, 회귀 없음, 남은 실패는 `App.xaml`(미리보기 대상 아님)과 `MainWindow.xaml`(`Icon` 상대 경로))를 확인했다. **WPF UI는 끝내지 못했다**(마지막 완전 측정 80/86이 유효). 예상 합계는 164/180(91%)이며 WPF UI 재측정 전까지는 미확인이다. WPF UI만 다시 측정하면 된다(0-4의 1번).
+- **세 라이브러리 모두 최신 호스트로 재측정을 마쳤고 회귀는 없다.** `internal` 타입 수정으로 MaterialDesign `PopupBox.xaml`/`SmartHint.xaml`, WPF UI `SettingsPage.xaml`이 새로 통과했다(이전 측정 대비).
+- **남은 실패 15건**: 미리보기 대상이 아닌 파일 8건(`App.xaml` 3, `ResourceDictionary` 루트 5: MahApps `XamlDisplay`, WPF UI 4), 문서 기준 상대 경로 `Icon` 4건(MahApps `MainWindow`/`CleanWindowDemo`/`StyleSetsDemo`, MaterialDesign `MainWindow`), `MetroWindow`의 `Resources` 중복 설정 2건(MahApps `FlyoutDemo`/`VSDemo`), 컴파일된 사전 전용 `x:Shared` 1건(MahApps `OtherExamples`). **즉 미리보기할 수 있는 파일 기준으로는 WPF UI와 MaterialDesign이 사실상 전부 렌더된다**(남은 것은 `Icon` 1건).
 - "오류 없이 렌더됨"이 "그림이 맞음"은 아니다. 그림을 직접 열어 본 파일은 소수뿐이다.
 
 ### 0-4. 앞으로 할 일 (순서대로)
-1. **재측정 → 문서 → 커밋 → 재설치**: 0-5의 명령으로 **WPF UI**(MaterialDesign은 52/54로 끝남)를 `-FreshHost`로 다시 측정(5~6분)하고, `doc/07` 4절 표·남은 실패 목록과 `User_Guide` 7절의 숫자(현재 "160개(89%)"로 낡았음)를 갱신한 뒤 커밋/푸시, 확장 재설치.
+1. **문서 갱신 → 커밋 → 확장 재설치**: 재측정은 끝났다(0-3). `doc/07` 4절 표·남은 실패 목록과 `User_Guide` 7절의 숫자(현재 "160개(89%)", 실패 20건으로 낡았음)를 **165/180(92%), 실패 15건**으로 고치고, 커밋/푸시한 뒤 확장을 재설치한다(0-1 참고). (재측정이 다시 필요하면 0-5의 명령을 쓴다.)
 2. **문서 기준 상대 경로 `Icon`**(4건: MahApps `MainWindow`/`CleanWindowDemo`/`StyleSetsDemo`, MaterialDesign `MainWindow`의 `favicon.ico`): `Window Icon="x.ico"`, `Icon="..\x.ico"`를 프로젝트 어셈블리의 `;component/` 경로로 바꾸거나(프로젝트 폴더 기준 경로 계산 필요), 못 풀면 그 속성만 제거하고 경고.
 3. **공유 프로젝트(Shared)의 XAML**(HandyControl 149개 전부 실패): 가장 가까운 `.csproj`에 빌드 산출물이 없으면 같은 폴더 트리를 참조하는 다른 프로젝트의 산출물을 찾는다(`ProjectLocator`).
 4. **남은 개별 실패**: `MetroWindow`의 `Resources` 중복 설정(2), 컴파일된 사전 전용 `x:Shared`(1), WPF UI `SettingsPage`의 `StaticResource` 키(1). 미리보기 대상이 아닌 `App.xaml`/`ResourceDictionary` 루트(7)는 정상이다.
