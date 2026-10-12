@@ -1,14 +1,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { CONFIG_BUILD_CONFIGURATION, CONFIG_SECTION, TASK_TYPE_DOTNET } from './constants';
+import { CONFIG_BUILD_CONFIGURATION, CONFIG_BUILD_EXTRA_ARGS, CONFIG_BUILD_TARGET_FRAMEWORK, CONFIG_SECTION, TASK_TYPE_DOTNET } from './constants';
 import {
     ACTION_LABELS,
     DotnetAction,
     buildDotnetArgs,
+    declaresTargetFramework,
     findNearestProject,
     isBuildableTarget,
     normalizeConfiguration,
+    normalizeExtraArgs,
+    normalizeTargetFramework,
 } from './dotnetCommands';
 import { LogFn } from './hostClient';
 import { LogId } from './logFormat';
@@ -57,7 +60,7 @@ export function registerProjectBuildCommands(context: vscode.ExtensionContext, l
 /** 대상 파일에 동작을 Task로 실행한다. 오류/경고는 Problems 패널(`$msCompile`)에 올라간다. */
 async function runDotnet(action: DotnetAction, targetPath: string | undefined, log: LogFn): Promise<void> {
     if (!targetPath || !isBuildableTarget(targetPath)) {
-        void vscode.window.showWarningMessage('WPF XAML: .csproj/.sln 파일에서 실행해 주세요.');
+        void vscode.window.showWarningMessage('WPF XAML: .csproj/.sln/.slnx/.slnf 파일에서 실행해 주세요.');
         return;
     } else {
         // 빌드 대상 파일.
@@ -69,8 +72,11 @@ async function runDotnet(action: DotnetAction, targetPath: string | undefined, l
         // 신뢰된 폴더.
     }
 
-    const configuration = normalizeConfiguration(vscode.workspace.getConfiguration(CONFIG_SECTION).get(CONFIG_BUILD_CONFIGURATION));
-    const args = buildDotnetArgs(action, targetPath, configuration);
+    const settings = vscode.workspace.getConfiguration(CONFIG_SECTION);
+    const configuration = normalizeConfiguration(settings.get(CONFIG_BUILD_CONFIGURATION));
+    const targetFramework = pickTargetFramework(targetPath, normalizeTargetFramework(settings.get(CONFIG_BUILD_TARGET_FRAMEWORK)));
+    const extraArgs = normalizeExtraArgs(settings.get(CONFIG_BUILD_EXTRA_ARGS));
+    const args = buildDotnetArgs(action, targetPath, configuration, { targetFramework, extraArgs });
     const name = `${ACTION_LABELS[action]}: ${path.basename(targetPath)}`;
     const task = new vscode.Task(
         { type: TASK_TYPE_DOTNET, action, target: targetPath },
@@ -82,6 +88,22 @@ async function runDotnet(action: DotnetAction, targetPath: string | undefined, l
     );
     task.group = action === 'clean' || action === 'restore' ? undefined : vscode.TaskGroup.Build;
     task.presentationOptions = { reveal: vscode.TaskRevealKind.Always, panel: vscode.TaskPanelKind.Shared, clear: true };
-    log('Info', LogId.ProjectBuild, `${action} target=${path.basename(targetPath)} configuration=${configuration}`);
+    log('Info', LogId.ProjectBuild, `${action} target=${path.basename(targetPath)} configuration=${configuration} framework=${targetFramework || '(all)'} extraArgs=${extraArgs.length}`);
     await vscode.tasks.executeTask(task);
+}
+
+/**
+ * 설정한 TFM을 이 대상에 쓸 수 있는가를 판단한다. `.csproj`가 `<TargetFrameworks>`에 그 TFM을 선언한 경우에만 돌려주고,
+ * 그 밖(솔루션 파일, 단일 대상 프로젝트, 선언을 못 찾음)에서는 빈 문자열이라 `-f`를 붙이지 않는다(없는 TFM은 빌드 오류가 된다).
+ */
+function pickTargetFramework(targetPath: string, configured: string): string {
+    if (!configured || path.extname(targetPath).toLowerCase() !== '.csproj') {
+        return '';
+    } else {
+        try {
+            return declaresTargetFramework(fs.readFileSync(targetPath, 'utf8'), configured) ? configured : '';
+        } catch {
+            return ''; // 읽을 수 없음: 지정하지 않는다.
+        }
+    }
 }

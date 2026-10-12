@@ -43,9 +43,13 @@
 |---|---|---|
 | `wpfXamlViewer.autoOpenPreview` | `true` | `.xaml` 파일을 열면 미리보기를 자동으로 연다. |
 | `wpfXamlViewer.buildConfiguration` | `Debug` | 프로젝트 빌드/다시 빌드/정리에 쓰는 구성(`Debug`/`Release`). |
+| `wpfXamlViewer.buildTargetFramework` | (빈 값) | 다중 대상(`<TargetFrameworks>`) `.csproj`를 우클릭 빌드할 때 이 TFM만 빌드한다(예: `net10.0-windows`). 그 `.csproj`가 해당 TFM을 **선언한 경우에만** `-f`로 적용하고, 솔루션/단일 대상 프로젝트에는 쓰지 않는다(없는 TFM은 빌드 오류라서). `Directory.Build.props`에서 TFM을 선언하는 프로젝트에는 적용되지 않는다. |
+| `wpfXamlViewer.buildExtraArgs` | `[]` | `dotnet` 인자 끝에 그대로 덧붙인다(예: `["-p:RunAnalyzers=false"]`). 최대 20개, 각 200자. 신뢰하지 않은 폴더에서는 읽지 않는다. |
 
 ### 프로젝트 빌드/정리
-- 탐색기에서 `.csproj`를 우클릭하면 **WPF XAML: 프로젝트 빌드 / 다시 빌드 / 정리 / 복원**이 나온다(`.sln`/`.slnx`는 빌드와 정리). 선택하면 **그 프로젝트만** `dotnet`으로 실행하고, 출력은 터미널 패널에 나오며 컴파일 오류는 **문제(Problems) 패널**에 올라가 클릭하면 해당 줄로 이동한다.
+- 탐색기에서 `.csproj`를 우클릭하면 **WPF XAML: 프로젝트 빌드 / 다시 빌드 / 정리 / 복원**이 나온다(`.sln`/`.slnx`/`.slnf`는 빌드와 정리). 선택하면 **그 프로젝트만** `dotnet`으로 실행하고, 출력은 터미널 패널에 나오며 컴파일 오류는 **문제(Problems) 패널**에 올라가 클릭하면 해당 줄로 이동한다.
+- **의존 프로젝트는 자동으로 함께 빌드된다.** `.csproj`의 `ProjectReference`로 연결된 프로젝트를 MSBuild가 먼저 빌드하므로 따로 고를 필요가 없다(역방향, 곧 "이 프로젝트를 참조하는 쪽"은 자동이 아니다).
+- **솔루션 전체 빌드가 오래 걸리는 이유**: `.sln`은 라이브러리를 모든 대상 프레임워크(예: net462~net10, netstandard)로 빌드한다. 평소에는 필요한 프로젝트만 우클릭 빌드하거나(필요한 TFM 하나만 빌드됨), `buildTargetFramework`로 TFM을 하나로 줄이고, 분석기가 무거우면 `buildExtraArgs`에 `-p:RunAnalyzers=false`를 넣는다. `.slnf`(솔루션 필터)로 필요한 프로젝트만 묶어 빌드할 수도 있다. 실측(wpfui의 `Wpf.Ui`, `--no-incremental`): 모든 TFM(6개) 58초 → `-f` 한 TFM 18초 → 분석기 끔 27초 → 둘 다 8초.
 - `dotnet`(.NET SDK)이 PATH에 있어야 한다. 빌드는 프로젝트의 코드를 실행하므로 **신뢰하지 않은 폴더에서는 메뉴가 숨겨지고 명령도 실행되지 않는다**.
 - 사용자 컨트롤 미리보기는 빌드 산출물(`bin`)을 읽는다. 빌드가 끝나도 미리보기가 저절로 다시 그려지지는 않으며, **다음 렌더 때**(XAML을 한 번 고치거나 미리보기를 다시 열 때) 새 산출물을 읽는다.
 

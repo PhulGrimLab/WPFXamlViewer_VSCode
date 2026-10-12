@@ -86,6 +86,19 @@
           ],
           "default": "Debug",
           "description": ".csproj/.sln 우클릭 빌드/다시 빌드/정리에 쓰는 구성(dotnet -c)."
+        },
+        "wpfXamlViewer.buildTargetFramework": {
+          "type": "string",
+          "default": "",
+          "description": "다중 대상(<TargetFrameworks>) .csproj를 우클릭 빌드할 때 이 TFM만 빌드한다(예: net10.0-windows). 그 .csproj가 해당 TFM을 선언한 경우에만 적용되고, 솔루션/단일 대상 프로젝트에는 쓰지 않는다. 비우면 모두 빌드."
+        },
+        "wpfXamlViewer.buildExtraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "우클릭 빌드/정리/복원의 `dotnet` 인자 끝에 그대로 덧붙인다(예: `[\"-p:RunAnalyzers=false\"]`). 신뢰하지 않은 폴더에서는 읽지 않는다."
         }
       }
     },
@@ -93,7 +106,7 @@
       "explorer/context": [
         {
           "command": "wpfXamlViewer.buildProject",
-          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted || resourceExtname == .slnf && isWorkspaceTrusted",
           "group": "7_wpfXamlBuild@1"
         },
         {
@@ -103,7 +116,7 @@
         },
         {
           "command": "wpfXamlViewer.cleanProject",
-          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted || resourceExtname == .slnf && isWorkspaceTrusted",
           "group": "7_wpfXamlBuild@3"
         },
         {
@@ -165,7 +178,10 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "신뢰되지 않은 폴더에서는 프로젝트 DLL을 불러오지 않고 사용자 정의 컨트롤을 자리표시자로 표시합니다."
+      "description": "신뢰되지 않은 폴더에서는 프로젝트 DLL을 불러오지 않고 사용자 정의 컨트롤을 자리표시자로 표시합니다.",
+      "restrictedConfigurations": [
+        "wpfXamlViewer.buildExtraArgs"
+      ]
     }
   },
   "scripts": {

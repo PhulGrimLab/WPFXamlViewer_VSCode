@@ -11,7 +11,7 @@
 ### 0-1. 지금 상태
 - `main` = `origin/main` = **`a0e63ef`**(이 문서의 갱신 커밋이 그 위에 하나 더 얹힌다). 그 외 미커밋 변경은 없다.
 - VS Code에 설치된 `.vsix`는 **`a0e63ef` 코드**다(2026-10-12 재설치, 설치 후 Reload Window는 사용자가 직접). 다시 설치하려면: `.\tools\package\build_vsix.ps1` → 실행 중인 `XamlRenderHost` 프로세스 종료 → `code --install-extension artifacts\wpf-xaml-live-preview-0.1.0.vsix --force` → VS Code Reload Window.
-- 테스트: 호스트 **150개 통과, 2개 건너뜀**(Fluent 골든 R15/R16, 런타임 의존), 확장 단위 **53개** + 통합 13개(preview 10, nohost 3) 통과. 호스트는 `dotnet test host\XamlRenderHost.Tests`, 확장은 `cd extension; npm test`.
+- 테스트: 호스트 **150개 통과, 2개 건너뜀**(Fluent 골든 R15/R16, 런타임 의존), 확장 단위 **59개** + 통합 13개(preview 10, nohost 3) 통과. 호스트는 `dotnet test host\XamlRenderHost.Tests`, 확장은 `cd extension; npm test`.
 - `package.json` 버전은 **0.1.0 그대로**이고 릴리스 태그/GitHub Release는 만들지 않았다. 변경 내용은 `extension/CHANGELOG.md`의 "미출시"에 있다.
 
 ### 0-2. 이번 기간(2026-10-11~12)에 한 일
@@ -23,6 +23,7 @@
 6. **접두사가 붙은 델리게이트 첨부 속성 제거**, **신뢰된 프로젝트의 `internal` 타입 지원**(`XamlXmlReaderSettings.LocalAssembly`)(`7ea523c`).
 7. **(2026-10-12 저녁, `a0e63ef`)**: ① 문서 기준 상대 경로 `Window Icon` 제거 ② 공유 프로젝트(`.projitems`) XAML이 Import하는 앱 프로젝트의 산출물 사용(`ProjectLocator`) ③ `x:Shared` 제거 ④ 루트 `*.Resources`가 부모 클래스 이름(`Window.Resources`)이어도 재사용 ⑤ 인라인된 앱 리소스 안 사용자 타입의 생성자 예외 때 그 요소만 건너뜀 ⑥ `deps.json`이 있는 출력은 `deps.json`에 없는 DLL을 미리 로드하지 않음. 상세는 `doc/07` 고친 것 14~19번, `CHANGELOG`.
 8. **프로젝트 우클릭 빌드/정리 기능**(2026-10-12 밤, 사용자 요청): `extension/src/dotnetCommands.ts`(순수 로직: 인자·구성 정규화·가장 가까운 `.csproj`)와 `projectBuild.ts`(명령 등록, `vscode.Task` + `ProcessExecution`, `$msCompile`). 명령 5개(`buildProject`/`rebuildProject`/`cleanProject`/`restoreProject`/`buildXamlProject`), 설정 `buildConfiguration`, 로그 `E016`. 단위 테스트 X-B01~05, 통합 테스트 X-B06(등록)·X-B07(실제 dotnet build/clean 실행). 공유 프로젝트(`.projitems`) XAML의 "이 XAML의 프로젝트 빌드"는 `.csproj`가 없으면 안내만 한다(호스트의 공유 프로젝트 탐색은 아직 확장 쪽에 없다).
+9. **빌드 옵션**(2026-10-13): 설정 `buildTargetFramework`(`-f`, `<TargetFrameworks>`를 선언한 `.csproj`에만), `buildExtraArgs`(`restrictedConfigurations`로 미신뢰 폴더에서 차단), `.slnf` 지원. 단위 테스트 X-B10~15. 의존 프로젝트는 `ProjectReference` 덕분에 MSBuild가 자동으로 함께 빌드한다(추가 구현 없음). wpfui 실측: sln 전체 빌드 3분 19초(모든 TFM), `Wpf.Ui` 재빌드 58초 → `-f` 18초 / 분석기 끔 27초 / 둘 다 8초.
 
 ### 0-3. 라이브러리 일괄 렌더 수치 (파일마다 새 호스트, 오류 없이 렌더된 비율)
 | 저장소 | 처음 | 최종 측정(최신 호스트 `a0e63ef`, `-FreshHost`) |

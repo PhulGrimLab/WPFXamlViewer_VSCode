@@ -40,3 +40,9 @@ export const CONFIG_BUILD_CONFIGURATION = 'buildConfiguration';
 
 /** 빌드/정리 Task의 type(package.json의 taskDefinitions와 같아야 한다). */
 export const TASK_TYPE_DOTNET = 'wpfXamlViewer.dotnet';
+
+/** 빌드 명령이 읽는 설정: 다중 대상 프로젝트에서 빌드할 TFM(`dotnet -f`). 빈 값이면 모두. */
+export const CONFIG_BUILD_TARGET_FRAMEWORK = 'buildTargetFramework';
+
+/** 빌드 명령이 읽는 설정: `dotnet` 인자 끝에 덧붙일 추가 인자 목록. */
+export const CONFIG_BUILD_EXTRA_ARGS = 'buildExtraArgs';
