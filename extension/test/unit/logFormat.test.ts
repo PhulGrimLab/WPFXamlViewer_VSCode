@@ -23,6 +23,7 @@ describe('formatLogLine', () => {
             RequestDiscarded: 'E013',
             HostOutputIgnored: 'E014',
             HostRecycled: 'E015',
+            ProjectBuild: 'E016',
         });
     });
 });

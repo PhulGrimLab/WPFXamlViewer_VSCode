@@ -34,3 +34,9 @@ export const CONFIG_SECTION = 'wpfXamlViewer';
 
 /** `.xaml` 에디터가 활성화될 때 미리보기를 자동으로 여는지(기본 true). */
 export const CONFIG_AUTO_OPEN = 'autoOpenPreview';
+
+/** 빌드 명령이 읽는 설정: `dotnet build -c` 구성(Debug/Release). */
+export const CONFIG_BUILD_CONFIGURATION = 'buildConfiguration';
+
+/** 빌드/정리 Task의 type(package.json의 taskDefinitions와 같아야 한다). */
+export const TASK_TYPE_DOTNET = 'wpfXamlViewer.dotnet';

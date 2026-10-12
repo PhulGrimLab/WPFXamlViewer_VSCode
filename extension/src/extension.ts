@@ -6,6 +6,7 @@ import { HostClient, LogFn } from './hostClient';
 import { resolveHostExe } from './hostLocator';
 import { LogId, formatLogLine } from './logFormat';
 import { PreviewController } from './previewController';
+import { registerProjectBuildCommands } from './projectBuild';
 
 /** 통합 테스트(T4/T5)가 확장 상태를 읽는 API. activate의 반환값으로 노출한다. */
 export interface ExtensionTestApi {
@@ -70,6 +71,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         getHostPid: () => undefined,
         getLogLines: () => [...logLines],
     };
+    registerProjectBuildCommands(context, log); // 호스트가 없어도 빌드 명령은 쓸 수 있다.
     const hostExe = resolveHostExe(context.extensionPath, fs.existsSync);
     if (!hostExe) {
         log('Error', LogId.HostCrashed, 'host exe not found');

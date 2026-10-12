@@ -18,6 +18,8 @@ export const LogId = {
     HostOutputIgnored: 'E014',
     /** 호스트가 메모리가 쌓였다며 재시작을 요청해, 대기 요청이 없을 때 정상 종료하고 새 호스트로 바꿨다. */
     HostRecycled: 'E015',
+    /** 프로젝트 우클릭 빌드/정리 명령을 실행했다. */
+    ProjectBuild: 'E016',
 } as const;
 
 /**

@@ -11,7 +11,7 @@
 ### 0-1. 지금 상태
 - `main` = `origin/main` = **`a0e63ef`**(이 문서의 갱신 커밋이 그 위에 하나 더 얹힌다). 그 외 미커밋 변경은 없다.
 - VS Code에 설치된 `.vsix`는 **`a0e63ef` 코드**다(2026-10-12 재설치, 설치 후 Reload Window는 사용자가 직접). 다시 설치하려면: `.\tools\package\build_vsix.ps1` → 실행 중인 `XamlRenderHost` 프로세스 종료 → `code --install-extension artifacts\wpf-xaml-live-preview-0.1.0.vsix --force` → VS Code Reload Window.
-- 테스트: 호스트 **150개 통과, 2개 건너뜀**(Fluent 골든 R15/R16, 런타임 의존), 확장 **48개 통과**. 호스트는 `dotnet test host\XamlRenderHost.Tests`, 확장은 `cd extension; npm test`.
+- 테스트: 호스트 **150개 통과, 2개 건너뜀**(Fluent 골든 R15/R16, 런타임 의존), 확장 단위 **53개** + 통합 13개(preview 10, nohost 3) 통과. 호스트는 `dotnet test host\XamlRenderHost.Tests`, 확장은 `cd extension; npm test`.
 - `package.json` 버전은 **0.1.0 그대로**이고 릴리스 태그/GitHub Release는 만들지 않았다. 변경 내용은 `extension/CHANGELOG.md`의 "미출시"에 있다.
 
 ### 0-2. 이번 기간(2026-10-11~12)에 한 일
@@ -22,6 +22,7 @@
 5. **코드 리뷰와 보안 수정**(`43f58f6`): 병합 사전 경로 탈출 3종(절대 경로, `..\`, 정션/링크) 차단, Tier 0의 `Application.Resources`/사용자 어셈블리 이름 해석 차단, 어셈블리 이름 검증, 임시 폴더 누수 정리 등. 자세한 내용은 `CHANGELOG`의 "보안 수정"/"코드 리뷰로 고친 것".
 6. **접두사가 붙은 델리게이트 첨부 속성 제거**, **신뢰된 프로젝트의 `internal` 타입 지원**(`XamlXmlReaderSettings.LocalAssembly`)(`7ea523c`).
 7. **(2026-10-12 저녁, `a0e63ef`)**: ① 문서 기준 상대 경로 `Window Icon` 제거 ② 공유 프로젝트(`.projitems`) XAML이 Import하는 앱 프로젝트의 산출물 사용(`ProjectLocator`) ③ `x:Shared` 제거 ④ 루트 `*.Resources`가 부모 클래스 이름(`Window.Resources`)이어도 재사용 ⑤ 인라인된 앱 리소스 안 사용자 타입의 생성자 예외 때 그 요소만 건너뜀 ⑥ `deps.json`이 있는 출력은 `deps.json`에 없는 DLL을 미리 로드하지 않음. 상세는 `doc/07` 고친 것 14~19번, `CHANGELOG`.
+8. **프로젝트 우클릭 빌드/정리 기능**(2026-10-12 밤, 사용자 요청): `extension/src/dotnetCommands.ts`(순수 로직: 인자·구성 정규화·가장 가까운 `.csproj`)와 `projectBuild.ts`(명령 등록, `vscode.Task` + `ProcessExecution`, `$msCompile`). 명령 5개(`buildProject`/`rebuildProject`/`cleanProject`/`restoreProject`/`buildXamlProject`), 설정 `buildConfiguration`, 로그 `E016`. 단위 테스트 X-B01~05, 통합 테스트 X-B06(등록)·X-B07(실제 dotnet build/clean 실행). 공유 프로젝트(`.projitems`) XAML의 "이 XAML의 프로젝트 빌드"는 `.csproj`가 없으면 안내만 한다(호스트의 공유 프로젝트 탐색은 아직 확장 쪽에 없다).
 
 ### 0-3. 라이브러리 일괄 렌더 수치 (파일마다 새 호스트, 오류 없이 렌더된 비율)
 | 저장소 | 처음 | 최종 측정(최신 호스트 `a0e63ef`, `-FreshHost`) |
@@ -39,6 +40,7 @@
 ### 0-4. 앞으로 할 일 (순서대로)
 1. **실사용 확인**: Reload Window 후 VS Code에서 실제 프로젝트(예: HandyControl 공유 XAML, MahApps `MainWindow`)의 미리보기를 눈으로 확인한다(일괄 렌더는 "오류 없음"만 본다).
 2. **HandyControl 개별 실패 7건**(`doc/07` 5절): 원인별 조사.
+   - 빌드 기능 후속 후보: 빌드 완료 후 열린 미리보기 자동 갱신, 산출물이 없을 때 "빌드할까요?" 제안, 공유 프로젝트 XAML의 프로젝트 찾기.
 3. **검토할 위험/미검증**: ① (처리함: `deps.json` 기준으로 미리 로드 제한) ② 호스트 재활용 임계값(처음 로드 대비 768MB 증가)에 실제로 도달하는 상황은 시험하지 못했다 ③ 라이브러리별 시작 훅은 WPF UI 하나뿐이다.
 4. **기존 남은 항목**: [doc/05](./05_Clean_Machine_Verification.md) 깨끗한 PC 검증(미실행), 웹뷰 마우스 동작 실사용 확인, 첫 GitHub Release([06](./06_Release_Process.md)) — 릴리스 전에 버전/`CHANGELOG` 정리.
 

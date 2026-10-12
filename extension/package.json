@@ -48,6 +48,26 @@
       {
         "command": "wpfXamlViewer.openPreview",
         "title": "WPF XAML: Open Preview"
+      },
+      {
+        "command": "wpfXamlViewer.buildProject",
+        "title": "WPF XAML: 프로젝트 빌드"
+      },
+      {
+        "command": "wpfXamlViewer.rebuildProject",
+        "title": "WPF XAML: 프로젝트 다시 빌드"
+      },
+      {
+        "command": "wpfXamlViewer.cleanProject",
+        "title": "WPF XAML: 프로젝트 정리"
+      },
+      {
+        "command": "wpfXamlViewer.restoreProject",
+        "title": "WPF XAML: 프로젝트 복원"
+      },
+      {
+        "command": "wpfXamlViewer.buildXamlProject",
+        "title": "WPF XAML: 이 XAML의 프로젝트 빌드"
       }
     ],
     "configuration": {
@@ -57,9 +77,90 @@
           "type": "boolean",
           "default": true,
           "description": ".xaml 파일을 열면 미리보기를 자동으로 연다. 이미 열린 미리보기가 있으면 재사용해 갱신한다."
+        },
+        "wpfXamlViewer.buildConfiguration": {
+          "type": "string",
+          "enum": [
+            "Debug",
+            "Release"
+          ],
+          "default": "Debug",
+          "description": ".csproj/.sln 우클릭 빌드/다시 빌드/정리에 쓰는 구성(dotnet -c)."
         }
       }
-    }
+    },
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "wpfXamlViewer.buildProject",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted",
+          "group": "7_wpfXamlBuild@1"
+        },
+        {
+          "command": "wpfXamlViewer.rebuildProject",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted",
+          "group": "7_wpfXamlBuild@2"
+        },
+        {
+          "command": "wpfXamlViewer.cleanProject",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted",
+          "group": "7_wpfXamlBuild@3"
+        },
+        {
+          "command": "wpfXamlViewer.restoreProject",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted",
+          "group": "7_wpfXamlBuild@4"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "wpfXamlViewer.buildXamlProject",
+          "when": "resourceExtname == .xaml && isWorkspaceTrusted",
+          "group": "7_wpfXamlBuild@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "wpfXamlViewer.buildProject",
+          "when": "false"
+        },
+        {
+          "command": "wpfXamlViewer.rebuildProject",
+          "when": "false"
+        },
+        {
+          "command": "wpfXamlViewer.cleanProject",
+          "when": "false"
+        },
+        {
+          "command": "wpfXamlViewer.restoreProject",
+          "when": "false"
+        },
+        {
+          "command": "wpfXamlViewer.buildXamlProject",
+          "when": "resourceExtname == .xaml && isWorkspaceTrusted"
+        }
+      ]
+    },
+    "taskDefinitions": [
+      {
+        "type": "wpfXamlViewer.dotnet",
+        "required": [
+          "action",
+          "target"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "build | rebuild | clean | restore"
+          },
+          "target": {
+            "type": "string",
+            "description": ".csproj/.sln 경로"
+          }
+        }
+      }
+    ]
   },
   "capabilities": {
     "untrustedWorkspaces": {

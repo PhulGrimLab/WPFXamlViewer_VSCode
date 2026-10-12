@@ -31,8 +31,23 @@
 | 명령 ID | 명령 팔레트 이름 | 설명 |
 |---|---|---|
 | `wpfXamlViewer.openPreview` | WPF XAML: Open Preview | 활성 `.xaml` 파일을 에디터 옆 패널에 미리보기한다. `.xaml`이 아니면 안내만 한다. |
+| `wpfXamlViewer.buildProject` | WPF XAML: 프로젝트 빌드 | 탐색기에서 `.csproj`/`.sln`/`.slnx`를 **우클릭 → 프로젝트 빌드**. 그 프로젝트만 `dotnet build`를 실행한다(아래 "프로젝트 빌드/정리"). |
+| `wpfXamlViewer.rebuildProject` | WPF XAML: 프로젝트 다시 빌드 | `.csproj` 우클릭. `dotnet build --no-incremental`. |
+| `wpfXamlViewer.cleanProject` | WPF XAML: 프로젝트 정리 | `.csproj`/`.sln` 우클릭. `dotnet clean`. |
+| `wpfXamlViewer.restoreProject` | WPF XAML: 프로젝트 복원 | `.csproj` 우클릭. `dotnet restore`. |
+| `wpfXamlViewer.buildXamlProject` | WPF XAML: 이 XAML의 프로젝트 빌드 | `.xaml` 에디터 우클릭(또는 명령 팔레트). 그 파일에서 위로 올라가 가장 가까운 `.csproj`를 빌드한다. |
 
-별도의 설정 항목은 없다.
+### 설정
+
+| 설정 | 기본값 | 설명 |
+|---|---|---|
+| `wpfXamlViewer.autoOpenPreview` | `true` | `.xaml` 파일을 열면 미리보기를 자동으로 연다. |
+| `wpfXamlViewer.buildConfiguration` | `Debug` | 프로젝트 빌드/다시 빌드/정리에 쓰는 구성(`Debug`/`Release`). |
+
+### 프로젝트 빌드/정리
+- 탐색기에서 `.csproj`를 우클릭하면 **WPF XAML: 프로젝트 빌드 / 다시 빌드 / 정리 / 복원**이 나온다(`.sln`/`.slnx`는 빌드와 정리). 선택하면 **그 프로젝트만** `dotnet`으로 실행하고, 출력은 터미널 패널에 나오며 컴파일 오류는 **문제(Problems) 패널**에 올라가 클릭하면 해당 줄로 이동한다.
+- `dotnet`(.NET SDK)이 PATH에 있어야 한다. 빌드는 프로젝트의 코드를 실행하므로 **신뢰하지 않은 폴더에서는 메뉴가 숨겨지고 명령도 실행되지 않는다**.
+- 사용자 컨트롤 미리보기는 빌드 산출물(`bin`)을 읽는다. 빌드가 끝나도 미리보기가 저절로 다시 그려지지는 않으며, **다음 렌더 때**(XAML을 한 번 고치거나 미리보기를 다시 열 때) 새 산출물을 읽는다.
 
 ## 4. 미리보기 화면
 
