@@ -88,10 +88,14 @@ public sealed class UserAssemblies
         /// <summary>의존성을 이미 미리 로드했는가. 폴더 전체 로드는 느리므로 컨텍스트당 한 번만 한다(xmlns마다 반복하지 않는다).</summary>
         private bool _dependenciesPreloaded;
 
+        /// <summary>주 어셈블리 옆에 `.deps.json`이 있는가. 있으면 의존성 목록이 정해져 있어 그 목록의 DLL만 미리 로드한다.</summary>
+        private readonly bool _hasDepsFile;
+
         public UserLoadContext(string mainAssemblyPath) : base("XamlViewer.User:" + Path.GetFileName(mainAssemblyPath), isCollectible: false)
         {
             _resolver = new AssemblyDependencyResolver(mainAssemblyPath);
             _mainDirectory = Path.GetDirectoryName(mainAssemblyPath)!;
+            _hasDepsFile = File.Exists(Path.ChangeExtension(mainAssemblyPath, ".deps.json"));
         }
 
         /// <summary>
@@ -144,8 +148,14 @@ public sealed class UserAssemblies
                 {
                     // 프레임워크 어셈블리는 건너뛴다: 자체 포함(self-contained) 출력에는 PresentationFramework 같은 복사본이 들어 있는데,
                     // 그것을 이 컨텍스트에 또 로드하면 호스트의 WPF와 형식 ID가 달라져 컨트롤이 깨진다. 프레임워크는 기본 컨텍스트가 책임진다.
-                    if (IsFrameworkAssembly(AssemblyName.GetAssemblyName(path).Name))
+                    var name = AssemblyName.GetAssemblyName(path);
+                    if (IsFrameworkAssembly(name.Name))
                     {
+                        continue;
+                    }
+                    else if (_hasDepsFile && _resolver.ResolveAssemblyToPath(name) == null)
+                    {
+                        // deps.json이 있는 출력인데 목록에 없는 DLL(참조되지 않는 파일): 로드하면 그 DLL의 로드 시점 코드(모듈 초기화 등)가 실행되므로 건드리지 않는다.
                         continue;
                     }
                     else

@@ -53,6 +53,17 @@ public class AppResourcesTests
     }
 
     [TestMethod]
+    public void RD07b_ResourcesWrittenWithBaseClassName_IsReusedNotDuplicated()
+    {
+        // 루트는 Button인데 속성 요소를 FrameworkElement.Resources로 쓴 문서(MahApps의 `MetroWindow` 루트 + `Window.Resources` 같은 경우): Resources를 한 번 더 넣으면 "이미 설정되어 있습니다" 오류가 난다.
+        var app = AppXaml("<sys:Double x:Key=\"W\">55</sys:Double>");
+        var main = $"<Button {Ns} {XNs} {SysNs} Width=\"{{StaticResource W}}\" Height=\"{{StaticResource H}}\"><FrameworkElement.Resources><sys:Double x:Key=\"H\">21</sys:Double></FrameworkElement.Resources></Button>";
+        var result = PreprocessorTests.RenderWithFiles(new() { ["App.xaml"] = app, ["Main.xaml"] = main, ["P.csproj"] = CsProj }, "Main.xaml");
+        Assert.AreEqual(55, result.PixelWidth);
+        Assert.AreEqual(21, result.PixelHeight);
+    }
+
+    [TestMethod]
     public void RD08_ImplicitResourceEntries_AreWrappedAndMerged()
     {
         // 루트의 Resources가 ResourceDictionary 없이 항목만 나열된 형태.

@@ -44,21 +44,184 @@ public static class ProjectLocator
         var projectFile = FindNearestProjectFile(xamlFilePath);
         if (projectFile == null)
         {
-            return new ProjectLookup(null, ProjectLookupReasons.NoProject);
+            // 공유 프로젝트(`.projitems`)의 XAML이면 그것을 가져가는(Import) 앱 프로젝트의 산출물을 쓴다.
+            return FindViaSharedProject(xamlFilePath) ?? new ProjectLookup(null, ProjectLookupReasons.NoProject);
         }
         else
         {
             // 프로젝트 있음: 산출물 탐색.
         }
 
+        var artifact = FindArtifact(projectFile);
+        return artifact == null
+            ? new ProjectLookup(null, ProjectLookupReasons.NoArtifact)
+            : new ProjectLookup(artifact, ProjectLookupReasons.Found);
+    }
+
+    private static ProjectArtifact? FindArtifact(string projectFile)
+    {
         var assemblyName = ReadAssemblyName(projectFile);
         var binDirectory = Path.Combine(Path.GetDirectoryName(projectFile)!, BinDirectoryName);
         // DLL 우선. WPF/WinForms 앱 프로젝트(OutputType=WinExe/Exe)는 DLL이 없고 <AssemblyName>.exe만 나오므로 그때만 EXE를 쓴다.
         var newest = FindNewestAssembly(binDirectory, assemblyName + ".dll")
             ?? FindNewestAssembly(binDirectory, assemblyName + ".exe");
-        return newest == null
-            ? new ProjectLookup(null, ProjectLookupReasons.NoArtifact)
-            : new ProjectLookup(new ProjectArtifact(projectFile, assemblyName, newest), ProjectLookupReasons.Found);
+        return newest == null ? null : new ProjectArtifact(projectFile, assemblyName, newest);
+    }
+
+    private const string SharedItemsPattern = "*.projitems";
+
+    /// <summary>공유 프로젝트 폴더에서 위로 올라가 `.csproj`를 찾는 최대 단계(`src/Shared/X` 기준 저장소 루트 근처까지).</summary>
+    private const int MaxSharedSearchLevels = 3;
+
+    /// <summary>`.csproj`를 찾을 때 내려가는 최대 깊이와 건너뛸 폴더.</summary>
+    private const int MaxSharedProjectDepth = 4;
+    private static readonly string[] SkippedDirectories = { "bin", "obj", "node_modules", ".git", ".vs" };
+
+    /// <summary>
+    /// XAML이 공유 프로젝트(`.projitems`가 있는 폴더 트리) 안에 있으면, 그 `.projitems`를 Import하는 `.csproj` 중 산출물이 있는 가장 최신 것을 돌려준다.
+    /// 공유 프로젝트 자체는 빌드 산출물이 없어서 가장 가까운 `.csproj`가 없다. 못 찾으면 null.
+    /// </summary>
+    private static ProjectLookup? FindViaSharedProject(string xamlFilePath)
+    {
+        var sharedItems = FindNearestSharedItems(xamlFilePath);
+        if (sharedItems == null)
+        {
+            return null;
+        }
+        else
+        {
+            // 공유 프로젝트 안의 XAML: 가져가는 앱 프로젝트 탐색.
+        }
+
+        var sharedName = Path.GetFileName(sharedItems);
+        var root = Path.GetDirectoryName(sharedItems);
+        for (var level = 0; level < MaxSharedSearchLevels && root != null; level++)
+        {
+            root = Path.GetDirectoryName(root);
+        }
+
+        ProjectArtifact? best = null;
+        var bestTime = DateTime.MinValue;
+        var sawProject = false;
+        foreach (var project in EnumerateProjectFiles(root, depth: 0))
+        {
+            if (!ImportsSharedItems(project, sharedName))
+            {
+                continue;
+            }
+            else
+            {
+                sawProject = true;
+            }
+
+            var artifact = FindArtifact(project);
+            var time = artifact == null ? DateTime.MinValue : File.GetLastWriteTimeUtc(artifact.AssemblyPath);
+            if (artifact != null && time > bestTime)
+            {
+                best = artifact;
+                bestTime = time;
+            }
+            else
+            {
+                // 산출물이 없거나 더 오래된 것.
+            }
+        }
+
+        return best != null
+            ? new ProjectLookup(best, ProjectLookupReasons.Found)
+            : sawProject ? new ProjectLookup(null, ProjectLookupReasons.NoArtifact) : null;
+    }
+
+    private static string? FindNearestSharedItems(string xamlFilePath)
+    {
+        var directory = Path.GetDirectoryName(Path.GetFullPath(xamlFilePath));
+        for (var level = 0; level <= MaxProjectSearchLevels && directory != null; level++)
+        {
+            try
+            {
+                var items = Directory.GetFiles(directory, SharedItemsPattern);
+                if (items.Length > 0)
+                {
+                    return items.OrderBy(p => p, StringComparer.OrdinalIgnoreCase).First();
+                }
+                else
+                {
+                    // 이 폴더에는 없음: 위로.
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // 읽을 수 없는 폴더: 위로 계속.
+            }
+            directory = Path.GetDirectoryName(directory);
+        }
+        return null;
+    }
+
+    private static IEnumerable<string> EnumerateProjectFiles(string? directory, int depth)
+    {
+        if (directory == null)
+        {
+            yield break;
+        }
+        else
+        {
+            // 탐색 시작 폴더 있음.
+        }
+
+        string[] projects;
+        string[] subdirectories = Array.Empty<string>();
+        try
+        {
+            projects = Directory.GetFiles(directory, ProjectFilePattern);
+            if (depth < MaxSharedProjectDepth)
+            {
+                subdirectories = Directory.GetDirectories(directory);
+            }
+            else
+            {
+                // 최대 깊이.
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            yield break;
+        }
+
+        foreach (var project in projects.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            yield return project;
+        }
+
+        foreach (var subdirectory in subdirectories.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        {
+            if (SkippedDirectories.Contains(Path.GetFileName(subdirectory), StringComparer.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            else
+            {
+                foreach (var found in EnumerateProjectFiles(subdirectory, depth + 1))
+                {
+                    yield return found;
+                }
+            }
+        }
+    }
+
+    /// <summary>프로젝트 파일이 `…\이름.projitems`를 Import하는가(경로 구분자와 대소문자 무시).</summary>
+    private static bool ImportsSharedItems(string projectFile, string sharedItemsFileName)
+    {
+        try
+        {
+            var text = File.ReadAllText(projectFile);
+            return text.Replace('/', '\\').Contains("\\" + sharedItemsFileName, StringComparison.OrdinalIgnoreCase)
+                && text.Contains("Import", StringComparison.Ordinal);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private static string? FindNearestProjectFile(string xamlFilePath)

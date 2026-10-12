@@ -225,7 +225,17 @@ public static class XamlRenderer
                 var replacement = XamlPreprocessor.ReplaceFailedUserElement(xaml, ex.Line.Value, ex.Column.Value, summary);
                 if (replacement == null)
                 {
-                    throw; // 사용자 타입 요소를 특정하지 못함: 원래 오류를 보고한다.
+                    // 사용자 타입 요소를 특정하지 못함. 인라인된 앱 리소스/병합 사전 안의 요소(예: `<vm:ViewModelLocator x:Key="Locator"/>`)면 그 요소만 건너뛴다.
+                    var removal = XamlPreprocessor.RemoveFailedInlinedElement(xaml, ex.Line.Value, ex.Column.Value);
+                    if (removal == null)
+                    {
+                        throw; // 문서 본문의 오류: 원래 오류를 보고한다.
+                    }
+                    else
+                    {
+                        xaml = removal.Xaml;
+                        warnings.Add(new RenderWarning(WarningCodes.InlinedElementSkipped, $"병합 사전의 {removal.TypeName} 요소를 읽지 못해 건너뜁니다: {summary}", removal.Line, removal.Column));
+                    }
                 }
                 else
                 {

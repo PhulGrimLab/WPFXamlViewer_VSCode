@@ -109,6 +109,8 @@ public static partial class XamlPreprocessor
     private static readonly HashSet<string> RemovedXamlAttributes = new(StringComparer.Ordinal)
     {
         "Class", "Subclass", "ClassModifier", "FieldModifier",
+        // `x:Shared`는 컴파일된(BAML) 리소스 사전에서만 허용된다. 텍스트로 읽는 XAML에서는 제거해 공유 리소스로 취급한다(그림은 같다).
+        "Shared",
     };
 
     /// <summary>XAML 타입 조회용 스키마 컨텍스트(스레드 안전하지 않으므로 호출마다 만든다).</summary>
@@ -466,6 +468,20 @@ public static partial class XamlPreprocessor
         }
     }
 
+    /// <summary>`Window`류 요소의 `Icon` 속성이 마크업 확장/pack URI가 아닌 상대 파일 경로인가.</summary>
+    private static bool IsRelativeWindowIcon(XmlReader reader, string elementLocal)
+    {
+        if (reader.NamespaceURI.Length != 0 || reader.LocalName != "Icon" || !elementLocal.EndsWith("Window", StringComparison.Ordinal))
+        {
+            return false;
+        }
+        else
+        {
+            var value = reader.Value.Trim();
+            return value.Length > 0 && !value.StartsWith('{') && !value.Contains("pack:", StringComparison.OrdinalIgnoreCase) && !value.Contains("://", StringComparison.Ordinal);
+        }
+    }
+
     /// <summary>값이 `pack://application:` URI인 `Setter`(속성 요소가 아닌 `Value` 속성 형태)인가.</summary>
     private static bool IsApplicationPackSetter(XmlReader reader)
         => reader.NamespaceURI == PresentationNamespace && reader.LocalName == "Setter"
@@ -541,6 +557,11 @@ public static partial class XamlPreprocessor
             else if (reader.NamespaceURI.Length == 0 && IsEventAttribute(context.Schema, elementNamespace, elementLocal, reader.LocalName))
             {
                 code = WarningCodes.RemovedEventHandler;
+            }
+            else if (IsRelativeWindowIcon(reader, elementLocal))
+            {
+                // `Window Icon="x.ico"`/`Icon="..\x.ico"`: 문서 기준 상대 경로라 호스트가 읽을 수 없고, 화면 밖 렌더에는 보이지도 않는다.
+                code = WarningCodes.RemovedApplicationResource;
             }
             else if (reader.NamespaceURI.Length > 0 && reader.LocalName.Contains('.')
                 && IsPrefixedAttachedEvent(context.Schema, WithProjectAssembly(reader.NamespaceURI, context), reader.LocalName))

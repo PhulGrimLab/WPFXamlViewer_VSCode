@@ -77,6 +77,23 @@ public class PreprocessorTests
     }
 
     [TestMethod]
+    public void X03d_XShared_IsRemovedSoTextDictionariesParse()
+    {
+        var xaml = $"<Grid {Ns} {XNs} Width=\"40\" Height=\"30\"><Grid.Resources><Style x:Key=\"S\" x:Shared=\"False\" TargetType=\"Button\"/></Grid.Resources></Grid>";
+        var result = RenderTestHelper.Render(xaml);
+        Assert.AreEqual(40, result.PixelWidth);
+    }
+
+    [TestMethod]
+    public void X03c_RelativeWindowIcon_IsRemovedAndRestRenders()
+    {
+        var xaml = $"<Window {Ns} Icon=\"..\\app.ico\" Width=\"40\" Height=\"30\"><Grid/></Window>";
+        var result = RenderTestHelper.Render(xaml);
+        Assert.AreEqual(40, result.PixelWidth);
+        Assert.AreEqual(1, Codes(result).Count(c => c == WarningCodes.RemovedApplicationResource));
+    }
+
+    [TestMethod]
     public void X04_DesignTimeAttributes_AreIgnoredAndDesignSizeApplies()
     {
         var result = RenderTestHelper.Render(Fixture("R12_DesignTime"));

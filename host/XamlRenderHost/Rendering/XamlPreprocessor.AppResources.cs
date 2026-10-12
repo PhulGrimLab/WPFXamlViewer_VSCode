@@ -222,6 +222,14 @@ public static partial class XamlPreprocessor
     /// 경우: A) 루트에 Resources 없음 → 속성 요소 추가, B) 명시 ResourceDictionary가 있음 → 그 MergedDictionaries에 추가(없으면 생성),
     /// C) 사전 없이 항목만 나열(암시적 사전) → ResourceDictionary로 감싼다. 루트가 사전/Application이면 건드리지 않는다.
     /// </summary>
+    /// <summary>
+    /// 루트가 `Controls:MetroWindow`인데 `Resources`를 `Window.Resources`처럼 부모 클래스 이름으로 쓴 경우(접두사/이름이 달라도 같은 속성)인가.
+    /// 이걸 못 알아보면 같은 `Resources`를 한 번 더 넣어 "속성이 이미 설정되어 있습니다" 오류가 난다.
+    /// </summary>
+    private static bool IsBaseClassResources(XmlReader reader)
+        => reader.LocalName.EndsWith(".Resources", StringComparison.Ordinal)
+            && reader.LocalName.IndexOf('.') == reader.LocalName.Length - ".Resources".Length;
+
     private static string InsertMergedDictionary(string xaml, string dictionaryXml)
     {
         ElementSpan? root = null, resources = null, firstChild = null, merged = null;
@@ -251,7 +259,8 @@ public static partial class XamlPreprocessor
                         root = span;
                         CollectHoistableAttributes(reader, xaml, lineStarts, lineInfo, hoisted);
                     }
-                    else if (reader.Depth == 1 && root != null && reader.Name == root.Name + ".Resources")
+                    else if (reader.Depth == 1 && root != null && resources == null
+                        && (reader.Name == root.Name + ".Resources" || IsBaseClassResources(reader)))
                     {
                         resources = span;
                     }

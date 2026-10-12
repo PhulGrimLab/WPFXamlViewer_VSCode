@@ -60,13 +60,13 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 
 | 저장소 | 파일 수 | 오류 없이 렌더 | 처음(수정 전) |
 |---|---|---|---|
-| MahApps.Metro | 40 | 32 (80%) | 12 |
-| MaterialDesignInXamlToolkit | 54 | 52 (96%) | 3 |
+| MahApps.Metro | 40 | 38 (95%) | 12 |
+| MaterialDesignInXamlToolkit | 54 | 53 (98%) | 3 |
 | WPF UI (Gallery) | 86 | 81 (94%) | 21 |
-| HandyControl | 149 | 측정 안 함 | 0 |
-| **합계(HandyControl 제외)** | **180** | **165 (92%)** | 36 (20%) |
+| HandyControl(공유 프로젝트) | 149 | 130 (87%) | 0 |
+| **합계(HandyControl 제외)** | **180** | **172 (96%)** | 36 (20%) |
 
-- HandyControl은 XAML이 `Shared` 프로젝트에 있어 **가장 가까운 `.csproj`(공유 프로젝트)에 빌드 산출물이 없다.** 데모 앱 폴더에는 XAML이 0개이고, 공유 폴더의 파일은 Tier 1이 되지 않아 이번 재측정에서 제외했다(5절 3번).
+- HandyControl은 XAML이 `Shared` 프로젝트에 있어 가장 가까운 `.csproj`가 없었다(처음 0/149). 이제 `.projitems`를 Import하는 앱 프로젝트(`Net_GE45` 데모)의 산출물을 찾아 쓴다(`ProjectLocator`). 측정한 130/149 외 19건: 미리보기 대상이 아닌 파일 12건(`App.xaml` 1, `ResourceDictionary` 루트 11), 개별 실패 7건(`/Resources/Img/…` 앱 상대 이미지 경로 1, `ListBoxAttach.SelectedItems` 설정 예외 1, `FlowDocumentReader.Document` 설정 예외 1, `TypeConverterMarkupExtension` 값 제공 예외 4 — 데이터/코드 의존).
 - "오류 없이 그려졌는가"만 센 값이다. 그림이 맞는지는 일부만(아래) 눈으로 확인했다.
 - 파일마다 새 호스트로 렌더한 시간은 중앙값 약 3.6~5.6초다(프로젝트와 라이브러리 어셈블리를 매번 처음 불러오는 비용 포함). 같은 호스트를 계속 쓰면 이후 렌더는 0.1~0.3초다.
 
@@ -85,6 +85,12 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 11. **재빌드 시 메모리 누적 완화**: 아래 "알려진 부작용" 참고.
 12. **접두사가 붙은 핸들러 속성**: MaterialDesign의 `materialDesign:DialogHost.DialogClosingAttached="핸들러"`는 첨부 **이벤트**가 아니라 **델리게이트 타입의 첨부 속성**(`RegisterAttached`, `DialogClosingEventHandler`)이라 이벤트 판별(`IsEvent`)로는 잡히지 않았고, 핸들러 이름을 델리게이트로 만들려다 로드가 실패했다(처음에는 첨부 이벤트로 보고 고쳤지만 실제 파일이 계속 실패해 라이브러리 소스를 읽고서야 구조가 다르다는 것을 알았다). 소유자 타입을 속성의 접두사 네임스페이스에서 찾아 첨부 이벤트이거나 멤버 타입이 델리게이트면 제거한다(`RemovedEventHandler`). `Grid.Row` 같은 비델리게이트 첨부 속성은 유지한다. `Dialogs.xaml`, `Pickers.xaml`이 통과했다.
 13. **프로젝트의 `internal` 타입**: 컴파일된 앱은 같은 어셈블리의 `internal` 컨트롤/변환기를 XAML에서 쓰지만, 컴파일되지 않은 XAML을 읽을 때는 **`XamlXmlReader`가 public이 아닌 타입을 "알 수 없는 형식"으로 만들어** 로드가 실패했다. 독립 실험 프로젝트로 확인한 사실: 스키마 조회(이름/Type, 기본·WPF 컨텍스트)와 객체 쓰기는 `AccessLevel` 없이도 성공하고, 리더의 타입 해석만 막혀 있다. 그래서 처음 시도한 `XamlObjectWriterSettings.AccessLevel`(WPF 내부 로더 리플렉션)은 **효과가 없었고 그 코드는 버렸다.** 해법은 공개 API인 `XamlXmlReaderSettings.LocalAssembly = 프로젝트 어셈블리`다. **신뢰된 프로젝트(Tier 1)에서만** 설정하고 신뢰하지 않은 렌더는 자리표시자로 남는다(테스트 `T12`, `T12b`). `PopupBox.xaml`, `SmartHint.xaml`(MaterialDesign), `SettingsPage.xaml`(WPF UI)이 통과했다.
+14. **문서 기준 상대 경로 `Window Icon`**: `Icon="x.ico"`/`Icon="..\x.ico"`는 호스트가 읽을 수 없고 화면 밖 렌더에는 보이지도 않아, `*Window` 요소의 상대 경로 `Icon` 속성만 제거한다(`RemovedApplicationResource` 경고). 마크업 확장/`pack:` URI인 `Icon`은 건드리지 않는다.
+15. **`x:Shared`**: 컴파일된(BAML) 사전에서만 허용되고 텍스트 XAML에서는 파싱 오류라, 제거해 공유 리소스로 취급한다(MahApps `OtherExamples`, HandyControl 전체).
+16. **`Resources`를 부모 클래스 이름으로 쓴 루트**: 루트가 `Controls:MetroWindow`인데 `<Window.Resources>`를 쓰면 앱 리소스 주입이 `Resources`를 못 알아보고 한 번 더 넣어 "이미 설정되어 있습니다" 오류가 났다. 접두사/클래스 이름과 무관하게 루트의 `*.Resources`를 재사용한다.
+17. **인라인된 앱 리소스 안의 사용자 코드 예외**: App.xaml의 `<vm:ViewModelLocator x:Key="Locator"/>`처럼 생성자가 예외를 내면(`Application.Current` 의존 등) 자리표시자로 대체할 요소를 못 찾아 문서 전체가 실패했다. 이제 그 요소만 건너뛴다(`InlinedElementSkipped`).
+18. **공유 프로젝트(`.projitems`)의 XAML**: 가장 가까운 `.csproj`가 없으면 `.projitems`가 있는 폴더에서 세 단계 위부터 `.csproj`를 찾아(깊이 4, `bin`/`obj` 제외) 그 `.projitems`를 Import하는 프로젝트 중 산출물이 가장 최신인 것을 쓴다.
+19. **미리 로드 범위 축소**: `deps.json`이 있는 출력에서는 `deps.json`이 가리키는 DLL만 미리 로드한다(참조되지 않는 DLL의 로드 시점 코드 실행을 피함). `deps.json`이 없는 .NET Framework 출력은 기존대로 폴더의 관리 DLL을 로드한다.
 
 **눈으로 확인한 그림**(결과 PNG를 직접 열어 봄, 6개 파일뿐이다. 나머지는 "오류 없음"만 확인했다):
 - MaterialDesign `Buttons.xaml`: Material 스타일(색 버튼, 원형/분할 버튼, 배지, 칩)이 정상으로 그려진다.
@@ -94,14 +100,13 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 - WPF UI `Views\Windows\MainWindow.xaml`(1450x802): 창 크롬(최소화/최대화/닫기), 검색창, 도구 버튼이 그려진다. 네비게이션 목록과 본문 영역은 앱 코드가 실행 중에 채우는 부분이라 **비어 있다**(정적 렌더의 한계).
 - 다른 파일에 부분적 깨짐이 얼마나 더 있는지는 측정하지 않았다.
 
-### 남은 실패 15건의 원인 (3개 합산)
+### 남은 실패 8건의 원인 (3개 합산)
 | 건수 | 원인 | 비고 |
 |---|---|---|
 | 5 | 루트가 `ResourceDictionary` | 스타일/리소스 파일이라 미리보기 대상이 아님(정상): MahApps `XamlDisplay`, WPF UI 4개 |
-| 3 | 루트가 `Application`(`App.xaml` 자체) | 미리보기 대상이 아님(정상). 합산하면 **미리보기 대상이 아닌 파일이 8건**이다 |
-| 4 | 이미지/아이콘 리소스 | `Icon="….ico"`, `Icon="..\x.ico"`처럼 문서 기준 **상대 경로**로 프로젝트 리소스를 가리키는 `Window` 아이콘: MahApps `MainWindow`/`CleanWindowDemo`/`StyleSetsDemo`, MaterialDesign `MainWindow`(`favicon.ico`) |
-| 2 | `MetroWindow`의 `Resources` 중복 설정 | `Window.Resources`를 직접 쓰는 `MetroWindow` 파생 XAML(MahApps `FlyoutDemo`, `VSDemo`) |
-| 1 | 컴파일된 사전 전용 `x:Shared` | MahApps `OtherExamples` |
+| 3 | 루트가 `Application`(`App.xaml` 자체) | 미리보기 대상이 아님(정상) |
+
+**즉 세 라이브러리에서 미리보기 대상인 파일은 전부 오류 없이 렌더된다**(172/172). 이전 목록의 `Window Icon` 상대 경로, `MetroWindow` `Resources` 중복, `x:Shared`는 14~17번 수정으로 해결됐다.
 
 (앞선 측정의 "`internal` 타입", "접두사가 붙은 첨부 핸들러", "`StaticResource` 키 없음(`SettingsPage`)"은 12·13번 수정으로 모두 해결됐다.)
 
@@ -113,10 +118,8 @@ $r | ? Status -ne OK | Group { $_.Detail -replace "'[^']*'", "'…'" -replace '\
 - 이 숫자는 "XAML 파일 하나를 앱 밖에서 따로 그릴 수 있는가"다. 실제 앱의 데이터(DataContext)와 코드 비하인드 동작은 재현하지 않는다.
 
 ## 5. 다음 개선 후보 (아직 하지 않음)
-1. 문서 기준 상대 경로 이미지/아이콘(`Icon="x.ico"`, `Icon="..\x.ico"`)을 프로젝트 어셈블리의 컴파일된 리소스 경로로 바꾸기(프로젝트 폴더 기준 경로 계산 필요, 4건).
-2. 공유 프로젝트(Shared)의 XAML: 가장 가까운 `.csproj`에 산출물이 없으면 같은 폴더 트리를 참조하는 다른 프로젝트의 산출물을 찾기(HandyControl 149개).
-3. `MetroWindow`의 `Resources` 중복 설정(2건), 컴파일된 사전 전용 `x:Shared`(1건) 같은 라이브러리별 개별 사례.
-4. 라이브러리별 시작 훅(`HostApplication`의 목록)은 현재 WPF UI 하나뿐이다. 다른 라이브러리에서 비슷한 "앱 시작 코드가 채우는 값" 문제가 보이면 같은 방식으로 추가한다.
+1. HandyControl 개별 실패 7건(앱 상대 이미지 `/Resources/Img/…`, `ListBoxAttach.SelectedItems`, `FlowDocumentReader.Document`, `TypeConverterMarkupExtension` 4건): 원인별 조사.
+2. 라이브러리별 시작 훅(`HostApplication`의 목록)은 현재 WPF UI 하나뿐이다. 다른 라이브러리에서 비슷한 "앱 시작 코드가 채우는 값" 문제가 보이면 같은 방식으로 추가한다.
 
 ## 6. 샘플 정리
 `WpfControlSamples`는 저장소 밖이며 약 140MB + 빌드 산출물이다. 필요 없으면 폴더째 지워도 이 저장소에는 영향이 없다.

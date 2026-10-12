@@ -10,11 +10,16 @@
 - `pack://application:` 값을 쓰는 `Setter`(앱 아이콘 등)를 제거해 `Setter 초기화` 오류를 막는다(`RemovedApplicationResource` 경고).
 - 사용자 컨트롤(`clr-namespace`, `assembly=` 없음)의 `Click` 같은 이벤트 핸들러 속성도 제거한다(이전에는 '`Click`을 만들지 못했습니다' 오류).
 
-- **유명 컨트롤 라이브러리(MaterialDesign/MahApps.Metro/WPF UI) 지원 대폭 개선**: 데모 XAML 180개 중 오류 없이 렌더되는 비율 20% → 89%(`doc/07_Third_Party_Control_Verification.md`).
+- **유명 컨트롤 라이브러리(MaterialDesign/MahApps.Metro/WPF UI) 지원 대폭 개선**: 데모 XAML 180개 중 오류 없이 렌더되는 비율 20% → 96%(미리보기 대상인 파일은 전부)(`doc/07_Third_Party_Control_Verification.md`).
   - 라이브러리 DLL에 컴파일된 리소스 사전(`pack://application:,,,/라이브러리;component/…`)을 로드된 어셈블리에서 읽는다.
   - 신뢰된 폴더에서 호스트가 `Application`을 만들어 `App.xaml` 리소스를 얹는다(라이브러리가 `Application.Current.Resources`를 본다).
   - URI형 xmlns(`http://…`)를 쓰면, 그리고 XAML에서만 쓰는 의존 어셈블리까지 필요할 때 출력 폴더의 관리 DLL을 로드한다.
   - `pack://application:,,,/Assets/…`(마크업 확장 인자 안 포함)를 프로젝트 어셈블리 경로로 바꾼다. 같은 개수 인자의 생성자가 여럿인 마크업 확장을 허용한다.
+- 공유 프로젝트(`.projitems`)의 XAML도 그것을 Import하는 앱 프로젝트의 산출물로 그린다(HandyControl 데모 149개 중 130개가 오류 없이 렌더, 이전 0개).
+- `Window`류 요소의 문서 기준 상대 경로 `Icon`(`Icon="x.ico"`)을 제거한다(`RemovedApplicationResource` 경고). `x:Shared` 속성은 텍스트 XAML에서 오류라 제거한다.
+- 루트가 `Controls:MetroWindow`처럼 파생 클래스인데 `Window.Resources`를 쓴 문서에서 "`Resources` 속성이 이미 설정되어 있습니다" 오류가 나던 문제를 고쳤다.
+- 인라인된 앱 리소스 안의 사용자 타입(예: `ViewModelLocator`)이 생성자 예외를 내도 그 요소만 건너뛴다.
+- 보안: `deps.json`이 있는 출력에서는 `deps.json`에 없는 DLL을 미리 로드하지 않는다(참조되지 않는 DLL의 로드 시점 코드 실행 방지).
 - **WPF UI 강조색(Accent/Primary) 요소가 비어 보이던 문제 해결**: `UiApplication`이 `Application`이 아닌 자기만의 사전을 쓰는 상태로 굳어 앱 시작 코드(`ApplySystemAccent`)가 쓴 값이 `Application.Resources`에 없었다. 앱 사전을 올린 뒤 알려진 라이브러리(WPF UI)의 시작 훅을 실행한다(캐시를 비운 뒤 `ApplicationAccentColorManager.ApplySystemAccent()`).
 - 앱 수준 리소스 사전 적용도 실패한 요소만 건너뛴다(예: `internal` 변환기 타입). 문서 안 주입과 같은 방식이다.
 - **창 핸들(PresentationSource)이 필요한 컨트롤 지원**: 렌더가 실패하면 한 번만 숨은 메시지 전용 창(`HwndSource`)에 루트를 붙여 다시 그린다(WPF UI `AutoSuggestBox`, `NavigationView`, `FluentWindow` 등). 그 뒤 `Loaded` 같은 지연 처리에서 앱 코드가 낸 예외는 무시하고 `RenderedWithHiddenWindow` 경고로 알린다. 다시 실패하면 처음 오류를 그대로 보고한다.

@@ -9,9 +9,9 @@
 > 이 0절이 가장 최신이다. 1절 이후는 2026-10-07 시점의 기록이라 일부는 낡았다(예: 호스트 테스트 110개 → 현재 145개).
 
 ### 0-1. 지금 상태
-- `main` = `origin/main` = **`7ea523c`**(이 문서를 커밋하기 전 기준; 이 문서 커밋이 그 위에 하나 더 얹힌다). 그 외 미커밋 변경은 없다.
-- VS Code에 **설치된 `.vsix`는 `43f58f6` 시점의 코드**다. 그 뒤 `7ea523c`의 두 수정(접두사 델리게이트 첨부 속성, `internal` 타입)은 **설치되지 않았다.** 재설치: `.\tools\package\build_vsix.ps1` → 실행 중인 `XamlRenderHost` 프로세스 종료 → `code --install-extension artifacts\wpf-xaml-live-preview-0.1.0.vsix --force` → VS Code **Reload Window**.
-- 테스트: 호스트 **145개 통과, 2개 건너뜀**(Fluent 골든 R15/R16, 런타임 의존), 확장 **48개 통과**. 호스트는 `dotnet test host\XamlRenderHost.Tests`, 확장은 `cd extension; npm test`.
+- `main` = `origin/main` = **`32ecfba`**. **그 위에 미커밋 변경이 있다**(아래 0-2의 7번: 상대 경로 `Icon`, 공유 프로젝트 탐색, `x:Shared`, `Resources` 중복, 인라인 사용자 예외 건너뛰기, 미리 로드 축소 + 테스트 + 문서). 사용자가 요청하면 커밋/푸시한다.
+- VS Code에 설치된 `.vsix`는 `7ea523c` 코드로 **2026-10-12에 재설치**했다(Reload Window는 사용자가 직접). 0-2의 7번 변경은 아직 설치본에 없다(재설치 방법: `.\tools\package\build_vsix.ps1` → 실행 중인 `XamlRenderHost` 프로세스 종료 → `code --install-extension artifacts\wpf-xaml-live-preview-0.1.0.vsix --force` → Reload Window).
+- 테스트: 호스트 **150개 통과, 2개 건너뜀**(Fluent 골든 R15/R16, 런타임 의존), 확장 **48개 통과**. 호스트는 `dotnet test host\XamlRenderHost.Tests`, 확장은 `cd extension; npm test`.
 - `package.json` 버전은 **0.1.0 그대로**이고 릴리스 태그/GitHub Release는 만들지 않았다. 변경 내용은 `extension/CHANGELOG.md`의 "미출시"에 있다.
 
 ### 0-2. 이번 기간(2026-10-11~12)에 한 일
@@ -21,6 +21,7 @@
 4. **WPF UI 강조색 훅**(`HostApplication`의 라이브러리 훅), **창 핸들이 필요한 컨트롤용 숨은 `HwndSource` 폴백**, **호스트 재활용**(응답 `recycle:true` → 확장이 대기 요청이 없을 때 교체).
 5. **코드 리뷰와 보안 수정**(`43f58f6`): 병합 사전 경로 탈출 3종(절대 경로, `..\`, 정션/링크) 차단, Tier 0의 `Application.Resources`/사용자 어셈블리 이름 해석 차단, 어셈블리 이름 검증, 임시 폴더 누수 정리 등. 자세한 내용은 `CHANGELOG`의 "보안 수정"/"코드 리뷰로 고친 것".
 6. **접두사가 붙은 델리게이트 첨부 속성 제거**, **신뢰된 프로젝트의 `internal` 타입 지원**(`XamlXmlReaderSettings.LocalAssembly`)(`7ea523c`).
+7. **(2026-10-12 저녁, 미커밋)**: ① 문서 기준 상대 경로 `Window Icon` 제거 ② 공유 프로젝트(`.projitems`) XAML이 Import하는 앱 프로젝트의 산출물 사용(`ProjectLocator`) ③ `x:Shared` 제거 ④ 루트 `*.Resources`가 부모 클래스 이름(`Window.Resources`)이어도 재사용 ⑤ 인라인된 앱 리소스 안 사용자 타입의 생성자 예외 때 그 요소만 건너뜀 ⑥ `deps.json`이 있는 출력은 `deps.json`에 없는 DLL을 미리 로드하지 않음. 상세는 `doc/07` 고친 것 14~19번, `CHANGELOG`.
 
 ### 0-3. 라이브러리 일괄 렌더 수치 (파일마다 새 호스트, 오류 없이 렌더된 비율)
 | 저장소 | 처음 | 최종 측정(최신 호스트 `7ea523c`, 접두사 속성 + `internal` 수정 포함, `-FreshHost`) |
@@ -28,19 +29,18 @@
 | MahApps.Metro | 12/40 | 32/40 |
 | MaterialDesign | 3/54 | **52/54** |
 | WPF UI | 21/86 | **81/86** |
-| 합계(HandyControl 제외) | 36/180 (20%) | **165/180 (92%)** |
+| 합계(HandyControl 제외) | 36/180 (20%) | **172/180 (96%)** (최신 호스트, 2026-10-12 저녁 재측정: MahApps 38/40, MaterialDesign 53/54, WPF UI 81/86) |
+| HandyControl(공유 프로젝트) | 0/149 | **130/149** |
 
-- **세 라이브러리 모두 최신 호스트로 재측정을 마쳤고 회귀는 없다.** `internal` 타입 수정으로 MaterialDesign `PopupBox.xaml`/`SmartHint.xaml`, WPF UI `SettingsPage.xaml`이 새로 통과했다(이전 측정 대비).
-- **남은 실패 15건**: 미리보기 대상이 아닌 파일 8건(`App.xaml` 3, `ResourceDictionary` 루트 5: MahApps `XamlDisplay`, WPF UI 4), 문서 기준 상대 경로 `Icon` 4건(MahApps `MainWindow`/`CleanWindowDemo`/`StyleSetsDemo`, MaterialDesign `MainWindow`), `MetroWindow`의 `Resources` 중복 설정 2건(MahApps `FlyoutDemo`/`VSDemo`), 컴파일된 사전 전용 `x:Shared` 1건(MahApps `OtherExamples`). **즉 미리보기할 수 있는 파일 기준으로는 WPF UI와 MaterialDesign이 사실상 전부 렌더된다**(남은 것은 `Icon` 1건).
+- **세 라이브러리와 HandyControl 모두 최신 호스트(미커밋 변경 포함)로 재측정했고 회귀는 없다.** 세 라이브러리는 미리보기 대상인 파일이 **전부** 렌더된다(172/172).
+- **남은 실패**: 세 라이브러리 8건은 전부 미리보기 대상이 아닌 파일(`App.xaml` 3, `ResourceDictionary` 루트 5). HandyControl 19건 중 12건도 같은 이유이고, 개별 실패 7건(앱 상대 이미지 `/Resources/Img/…` 1, `ListBoxAttach.SelectedItems` 1, `FlowDocumentReader.Document` 1, `TypeConverterMarkupExtension` 4)이 남았다.
 - "오류 없이 렌더됨"이 "그림이 맞음"은 아니다. 그림을 직접 열어 본 파일은 소수뿐이다.
 
 ### 0-4. 앞으로 할 일 (순서대로)
-1. **확장 재설치**(0-1 참고): 재측정(0-3)과 문서 갱신(`doc/07` 4절 표·남은 실패 15건·고친 것 12~13번, `User_Guide`의 165/180)은 **끝나서 커밋/푸시했다.** 남은 것은 최신 코드(`7ea523c`)를 VS Code에 설치하는 일뿐이다. (재측정이 다시 필요하면 0-5의 명령을 쓴다.)
-2. **문서 기준 상대 경로 `Icon`**(4건: MahApps `MainWindow`/`CleanWindowDemo`/`StyleSetsDemo`, MaterialDesign `MainWindow`의 `favicon.ico`): `Window Icon="x.ico"`, `Icon="..\x.ico"`를 프로젝트 어셈블리의 `;component/` 경로로 바꾸거나(프로젝트 폴더 기준 경로 계산 필요), 못 풀면 그 속성만 제거하고 경고.
-3. **공유 프로젝트(Shared)의 XAML**(HandyControl 149개 전부 실패): 가장 가까운 `.csproj`에 빌드 산출물이 없으면 같은 폴더 트리를 참조하는 다른 프로젝트의 산출물을 찾는다(`ProjectLocator`).
-4. **남은 개별 실패**: `MetroWindow`의 `Resources` 중복 설정(2), 컴파일된 사전 전용 `x:Shared`(1), WPF UI `SettingsPage`의 `StaticResource` 키(1). 미리보기 대상이 아닌 `App.xaml`/`ResourceDictionary` 루트(7)는 정상이다.
-5. **검토할 위험/미검증**: ① 미리 로드가 신뢰된 폴더의 출력 DLL을 **모두** 로드한다(참조되지 않는 DLL의 로드 시점 코드도 실행) — `deps.json` 기준으로 제한할지 검토 ② 호스트 재활용 임계값(처음 로드 대비 768MB 증가)에 실제로 도달하는 상황은 시험하지 못했다 ③ 라이브러리별 시작 훅은 WPF UI 하나뿐이다.
-6. **기존 남은 항목**: [doc/05](./05_Clean_Machine_Verification.md) 깨끗한 PC 검증(미실행), 웹뷰 마우스 동작 실사용 확인, 첫 GitHub Release([06](./06_Release_Process.md)) — 릴리스 전에 버전/`CHANGELOG` 정리.
+1. **미커밋 변경 커밋/푸시 + 확장 재설치**(사용자 요청 시). 재설치 후 VS Code에서 실제 프로젝트(예: HandyControl 공유 XAML, MahApps `MainWindow`)를 눈으로 확인.
+2. **HandyControl 개별 실패 7건**(`doc/07` 5절): 원인별 조사.
+3. **검토할 위험/미검증**: ① (처리함: `deps.json` 기준으로 미리 로드 제한) ② 호스트 재활용 임계값(처음 로드 대비 768MB 증가)에 실제로 도달하는 상황은 시험하지 못했다 ③ 라이브러리별 시작 훅은 WPF UI 하나뿐이다.
+4. **기존 남은 항목**: [doc/05](./05_Clean_Machine_Verification.md) 깨끗한 PC 검증(미실행), 웹뷰 마우스 동작 실사용 확인, 첫 GitHub Release([06](./06_Release_Process.md)) — 릴리스 전에 버전/`CHANGELOG` 정리.
 
 ### 0-5. 이어서 작업하는 방법 (이 PC 기준)
 - **git**: 이번 세션에 winget으로 설치했다(`C:\Program Files\Git\cmd`). 이미 열린 터미널은 PATH를 못 읽을 수 있으니 새 터미널을 열거나 `$env:Path += ";C:\Program Files\Git\cmd"`. 커밋 메시지는 파일로 저장해 `git commit -F 파일`로 쓴다(PowerShell 5.1에서 `-F -`와 한글 here-string은 실패했다).
