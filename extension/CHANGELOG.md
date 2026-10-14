@@ -1,6 +1,6 @@
 # 변경 이력
 
-## 미출시
+## 0.1.0 (2026-10-14, 미리보기)
 ### 추가
 - **프로젝트 우클릭 빌드/정리**: 탐색기에서 `.csproj`를 우클릭하면 프로젝트 빌드 / 다시 빌드 / 정리 / 복원(`.sln`/`.slnx`는 빌드·정리)을 그 프로젝트만 `dotnet`으로 실행한다. 오류는 문제 패널에 올라간다(`$msCompile`). `.xaml` 에디터 우클릭 "이 XAML의 프로젝트 빌드"는 가장 가까운 `.csproj`를 빌드한다. 설정 `wpfXamlViewer.buildConfiguration`(Debug/Release). 신뢰하지 않은 폴더에서는 숨기고 실행도 막는다(빌드는 프로젝트 코드를 실행). 호스트 exe가 없어도 쓸 수 있다.
 - 빌드 설정 추가: `wpfXamlViewer.buildTargetFramework`(다중 대상 `.csproj`에서 한 TFM만 빌드, 그 `.csproj`가 TFM을 선언한 경우에만 `-f` 적용), `wpfXamlViewer.buildExtraArgs`(`dotnet` 인자 덧붙임, 신뢰하지 않은 폴더에서는 읽지 않음). `.slnf`(솔루션 필터) 우클릭 빌드/정리 지원. 실측(wpfui `Wpf.Ui`, 전체 재빌드): 6개 TFM 58초 → 1개 TFM 18초, 분석기 끔 27초, 둘 다 8초.

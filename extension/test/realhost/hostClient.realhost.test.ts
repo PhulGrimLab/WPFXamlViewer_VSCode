@@ -212,7 +212,8 @@ describe('실제 호스트 + HostClient', function () {
         await client.dispose(); // shutdown → H002까지 기록되고 로거가 비워진다.
 
         const log = fs.readFileSync(path.join(logDir, 'host.log'), 'utf8');
-        const ids = log.split('\n').filter((l) => l.trim()).map((l) => l.split(' ')[2]).filter((id) => id !== 'H010');
+        const ids = log.split('\n').filter((l) => l.trim() && !l.includes(' cause=')).map((l) => l.split(' ')[2]).filter((id) => id !== 'H010');
+        // H012의 cause= 줄은 원인 조사용 Debug 로그(형식+스택만)라 순서 검증에서 뺀다.
         // H023(Tier 결정)은 세션의 첫 렌더 뒤에 한 번만 남는다(M4B).
         assert.deepStrictEqual(ids, ['H001', 'H011', 'H023', 'H012', 'H002'], log);
         assert.ok(!log.includes(secret), 'XAML 본문이 로그에 남았다');
