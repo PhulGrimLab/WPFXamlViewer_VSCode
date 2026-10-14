@@ -1,6 +1,6 @@
 # 변경 이력
 
-## 미출시
+## 0.1.1 (2026-10-14, 미리보기)
 ### 수정
 - **자체 포함(self-contained) 출력의 프로젝트에서 WPF UI 같은 라이브러리 컨트롤이 해석되지 않던 문제**: 출력 폴더에 든 프레임워크 복사본(`PresentationFramework`, `System.Xaml`, `WindowsBase` 등)을 사용자 컨텍스트에 또 로드해 라이브러리의 `XmlnsDefinition` 특성이 호스트의 WPF에서 보이지 않았다(`ui:FluentWindow`/`ui:SymbolIcon` 등 `XamlParse` 오류). 호스트의 공유 프레임워크에 있는 어셈블리는 사용자 출력의 복사본 대신 호스트 것을 쓴다. (PathDock `SelfContained=true`로 확인: 뷰 13개 중 12개 오류 → 0개)
 

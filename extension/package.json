@@ -2,7 +2,7 @@
   "name": "wpf-xaml-live-preview",
   "displayName": "WPF XAML Live Preview",
   "description": "VS Code에서 WPF XAML을 실제 WPF 렌더링으로 실시간 미리보기 (Windows 전용, .NET 10)",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "phulgrimlab",
   "license": "GPL-3.0-only",
   "preview": true,
