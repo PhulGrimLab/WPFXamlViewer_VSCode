@@ -48,8 +48,7 @@ jobs:
           ./tools/ci/ci.ps1 *>&1 | Tee-Object -FilePath ci.log
           if ($LASTEXITCODE -ne 0) {
             Get-Content ci.log | Select-String -Pattern 'failed|failing|Error|error|실패|FAIL|Exception' |
-              Select-Object -First 15 | ForEach-Object { "::error::" + ($_.Line.Trim() -replace '[
-%]', ' ') }
+              Select-Object -First 15 | ForEach-Object { "::error::" + ($_.Line.Trim() -replace '%', ' ') }
             exit 1
           }
 
