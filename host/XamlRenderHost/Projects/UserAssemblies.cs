@@ -118,7 +118,7 @@ public sealed class UserAssemblies
             foreach (var reference in main.GetReferencedAssemblies())
             {
                 var path = _resolver.ResolveAssemblyToPath(reference);
-                if (path == null)
+                if (path == null || IsFrameworkAssembly(reference.Name) || IsHostFrameworkAssembly(reference.Name))
                 {
                     continue;
                 }
@@ -171,8 +171,35 @@ public sealed class UserAssemblies
             }
         }
 
+        /// <summary>호스트가 쓰는 공유 프레임워크 폴더(런타임 + WPF). 사용자 출력에 같은 이름의 복사본이 있어도 이 컨텍스트에는 로드하지 않는다.</summary>
+        private static readonly string[] HostFrameworkDirectories =
+        {
+            System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(),
+            Path.GetDirectoryName(typeof(System.Windows.Window).Assembly.Location) ?? string.Empty,
+        };
+
+        /// <summary>호스트의 공유 프레임워크에 같은 이름의 어셈블리가 있는가.</summary>
+        private static bool IsHostFrameworkAssembly(string? simpleName)
+            => !string.IsNullOrEmpty(simpleName)
+                && ProjectLocator.IsSafeAssemblyName(simpleName)
+                && HostFrameworkDirectories.Any(dir => dir.Length > 0 && File.Exists(Path.Combine(dir, simpleName + ".dll")));
+
         protected override Assembly? Load(AssemblyName assemblyName)
         {
+            if (IsHostFrameworkAssembly(assemblyName.Name))
+            {
+                // 자체 포함(self-contained) 출력에는 프레임워크 복사본이 들어 있다. 그것을 이 컨텍스트에 또 로드하면 형식 ID가 갈라져
+                // 라이브러리(예: WPF UI)의 `XmlnsDefinition` 특성이 호스트의 WPF에서 보이지 않는다. 호스트(기본 컨텍스트)의 것을 쓴다.
+                try
+                {
+                    return AssemblyLoadContext.Default.LoadFromAssemblyName(new AssemblyName(assemblyName.Name!));
+                }
+                catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or BadImageFormatException)
+                {
+                    // 기본 컨텍스트가 못 찾으면 아래 일반 경로로.
+                }
+            }
+
             var path = _resolver.ResolveAssemblyToPath(assemblyName);
             return path == null ? null : LoadFromAssemblyPath(path); // null이면 기본 컨텍스트(프레임워크)가 처리한다.
         }

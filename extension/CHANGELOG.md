@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미출시
+### 수정
+- **자체 포함(self-contained) 출력의 프로젝트에서 WPF UI 같은 라이브러리 컨트롤이 해석되지 않던 문제**: 출력 폴더에 든 프레임워크 복사본(`PresentationFramework`, `System.Xaml`, `WindowsBase` 등)을 사용자 컨텍스트에 또 로드해 라이브러리의 `XmlnsDefinition` 특성이 호스트의 WPF에서 보이지 않았다(`ui:FluentWindow`/`ui:SymbolIcon` 등 `XamlParse` 오류). 호스트의 공유 프레임워크에 있는 어셈블리는 사용자 출력의 복사본 대신 호스트 것을 쓴다. (PathDock `SelfContained=true`로 확인: 뷰 13개 중 12개 오류 → 0개)
+
 ## 0.1.0 (2026-10-14, 미리보기)
 ### 추가
 - **프로젝트 우클릭 빌드/정리**: 탐색기에서 `.csproj`를 우클릭하면 프로젝트 빌드 / 다시 빌드 / 정리 / 복원(`.sln`/`.slnx`는 빌드·정리)을 그 프로젝트만 `dotnet`으로 실행한다. 오류는 문제 패널에 올라간다(`$msCompile`). `.xaml` 에디터 우클릭 "이 XAML의 프로젝트 빌드"는 가장 가까운 `.csproj`를 빌드한다. 설정 `wpfXamlViewer.buildConfiguration`(Debug/Release). 신뢰하지 않은 폴더에서는 숨기고 실행도 막는다(빌드는 프로젝트 코드를 실행). 호스트 exe가 없어도 쓸 수 있다.
