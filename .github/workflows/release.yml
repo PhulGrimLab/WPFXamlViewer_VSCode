@@ -43,7 +43,15 @@ jobs:
       # 호스트(T1+T2) + 확장 단위(T3) + 확장+실제 호스트(T3R). 통합/설치 스모크는 VS Code가 필요해 제외한다.
       - name: Test
         shell: pwsh
-        run: ./tools/ci/ci.ps1
+        run: |
+          # 실패 원인을 로그 열람 권한 없이도 볼 수 있게, 실패한 줄을 오류 주석으로도 남긴다.
+          ./tools/ci/ci.ps1 *>&1 | Tee-Object -FilePath ci.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content ci.log | Select-String -Pattern 'failed|failing|Error|error|실패|FAIL|Exception' |
+              Select-Object -First 15 | ForEach-Object { "::error::" + ($_.Line.Trim() -replace '[
+%]', ' ') }
+            exit 1
+          }
 
       - name: Package (.vsix)
         shell: pwsh
