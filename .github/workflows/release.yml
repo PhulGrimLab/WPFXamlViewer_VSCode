@@ -41,16 +41,19 @@ jobs:
           Write-Host "version=$version prerelease=$pre"
 
       # 호스트(T1+T2) + 확장 단위(T3) + 확장+실제 호스트(T3R). 통합/설치 스모크는 VS Code가 필요해 제외한다.
-      - name: Test
+      # 렌더 골든 이미지 비교(Render_MatchesGolden)는 폰트/글꼴 렌더링이 PC마다 달라(러너에서 1~3% 불일치) 여기서는 제외한다.
+      # 골든 비교는 릴리스 전 로컬에서 tools/ci/ci.ps1 로 확인한다(doc/06 점검표).
+      - name: Test (host)
         shell: pwsh
+        run: dotnet test host/XamlRenderHost.slnx --filter "FullyQualifiedName!~Render_MatchesGolden"
+
+      - name: Test (extension)
+        shell: pwsh
+        working-directory: extension
         run: |
-          # 실패 원인을 로그 열람 권한 없이도 볼 수 있게, 실패한 줄을 오류 주석으로도 남긴다.
-          ./tools/ci/ci.ps1 *>&1 | Tee-Object -FilePath ci.log
-          if ($LASTEXITCODE -ne 0) {
-            Get-Content ci.log | Select-String -Pattern 'failed|failing|Error|error|실패|FAIL|Exception' |
-              Select-Object -First 15 | ForEach-Object { "::error::" + ($_.Line.Trim() -replace '%', ' ') }
-            exit 1
-          }
+          npm ci
+          npm test
+          npm run test:realhost
 
       - name: Package (.vsix)
         shell: pwsh
