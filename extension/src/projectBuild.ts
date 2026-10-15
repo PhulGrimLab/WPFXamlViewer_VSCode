@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { CONFIG_BUILD_CONFIGURATION, CONFIG_BUILD_EXTRA_ARGS, CONFIG_BUILD_TARGET_FRAMEWORK, CONFIG_SECTION, TASK_TYPE_DOTNET } from './constants';
 import {
     ACTION_LABELS,
+    CONFIGURED_COMMANDS,
     DotnetAction,
     buildDotnetArgs,
     declaresTargetFramework,
@@ -39,6 +40,13 @@ export function registerProjectBuildCommands(context: vscode.ExtensionContext, l
             return runDotnet(action, target, log);
         }));
     }
+    // 우클릭 "구성 선택 빌드" 서브메뉴: 설정과 무관하게 Debug/Release를 직접 고른다.
+    for (const { command, action, configuration } of CONFIGURED_COMMANDS) {
+        context.subscriptions.push(vscode.commands.registerCommand(command, (resource?: vscode.Uri) => {
+            const target = resource?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+            return runDotnet(action, target, log, configuration);
+        }));
+    }
     context.subscriptions.push(vscode.commands.registerCommand(COMMAND_BUILD_XAML_PROJECT, (resource?: vscode.Uri) => {
         const xamlPath = resource?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
         if (!xamlPath) {
@@ -57,8 +65,8 @@ export function registerProjectBuildCommands(context: vscode.ExtensionContext, l
     }));
 }
 
-/** 대상 파일에 동작을 Task로 실행한다. 오류/경고는 Problems 패널(`$msCompile`)에 올라간다. */
-async function runDotnet(action: DotnetAction, targetPath: string | undefined, log: LogFn): Promise<void> {
+/** 대상 파일에 동작을 Task로 실행한다. 오류/경고는 Problems 패널(`$msCompile`)에 올라간다. `configurationOverride`가 있으면 설정 대신 그 구성을 쓴다. */
+async function runDotnet(action: DotnetAction, targetPath: string | undefined, log: LogFn, configurationOverride?: string): Promise<void> {
     if (!targetPath || !isBuildableTarget(targetPath)) {
         void vscode.window.showWarningMessage('WPF XAML: .csproj/.sln/.slnx/.slnf 파일에서 실행해 주세요.');
         return;
@@ -73,11 +81,11 @@ async function runDotnet(action: DotnetAction, targetPath: string | undefined, l
     }
 
     const settings = vscode.workspace.getConfiguration(CONFIG_SECTION);
-    const configuration = normalizeConfiguration(settings.get(CONFIG_BUILD_CONFIGURATION));
+    const configuration = normalizeConfiguration(configurationOverride ?? settings.get(CONFIG_BUILD_CONFIGURATION));
     const targetFramework = pickTargetFramework(targetPath, normalizeTargetFramework(settings.get(CONFIG_BUILD_TARGET_FRAMEWORK)));
     const extraArgs = normalizeExtraArgs(settings.get(CONFIG_BUILD_EXTRA_ARGS));
     const args = buildDotnetArgs(action, targetPath, configuration, { targetFramework, extraArgs });
-    const name = `${ACTION_LABELS[action]}: ${path.basename(targetPath)}`;
+    const name = `${ACTION_LABELS[action]} (${configuration}): ${path.basename(targetPath)}`;
     const task = new vscode.Task(
         { type: TASK_TYPE_DOTNET, action, target: targetPath },
         vscode.TaskScope.Workspace,

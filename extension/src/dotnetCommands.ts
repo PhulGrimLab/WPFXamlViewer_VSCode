@@ -27,6 +27,16 @@ export const ACTION_LABELS: Record<DotnetAction, string> = {
     restore: '복원',
 };
 
+/** 구성(Debug/Release)을 직접 고르는 우클릭 명령. 설정 `buildConfiguration`을 무시하고 이 구성으로 실행한다(package.json의 명령 ID와 같아야 한다). */
+export const CONFIGURED_COMMANDS: readonly { command: string; action: DotnetAction; configuration: (typeof BUILD_CONFIGURATIONS)[number] }[] = [
+    { command: 'wpfXamlViewer.buildProjectDebug', action: 'build', configuration: 'Debug' },
+    { command: 'wpfXamlViewer.buildProjectRelease', action: 'build', configuration: 'Release' },
+    { command: 'wpfXamlViewer.rebuildProjectDebug', action: 'rebuild', configuration: 'Debug' },
+    { command: 'wpfXamlViewer.rebuildProjectRelease', action: 'rebuild', configuration: 'Release' },
+    { command: 'wpfXamlViewer.cleanProjectDebug', action: 'clean', configuration: 'Debug' },
+    { command: 'wpfXamlViewer.cleanProjectRelease', action: 'clean', configuration: 'Release' },
+];
+
 /** 설정 값을 허용된 구성으로 정규화한다(대소문자 무시). 모르는 값이면 기본값. */
 export function normalizeConfiguration(value: unknown): string {
     const found = BUILD_CONFIGURATIONS.find((c) => typeof value === 'string' && c.toLowerCase() === value.trim().toLowerCase());

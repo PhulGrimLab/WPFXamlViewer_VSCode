@@ -66,6 +66,30 @@
         "title": "WPF XAML: 프로젝트 복원"
       },
       {
+        "command": "wpfXamlViewer.buildProjectDebug",
+        "title": "WPF XAML: 빌드 - Debug"
+      },
+      {
+        "command": "wpfXamlViewer.buildProjectRelease",
+        "title": "WPF XAML: 빌드 - Release"
+      },
+      {
+        "command": "wpfXamlViewer.rebuildProjectDebug",
+        "title": "WPF XAML: 다시 빌드 - Debug"
+      },
+      {
+        "command": "wpfXamlViewer.rebuildProjectRelease",
+        "title": "WPF XAML: 다시 빌드 - Release"
+      },
+      {
+        "command": "wpfXamlViewer.cleanProjectDebug",
+        "title": "WPF XAML: 정리 - Debug"
+      },
+      {
+        "command": "wpfXamlViewer.cleanProjectRelease",
+        "title": "WPF XAML: 정리 - Release"
+      },
+      {
         "command": "wpfXamlViewer.buildXamlProject",
         "title": "WPF XAML: 이 XAML의 프로젝트 빌드"
       }
@@ -123,6 +147,11 @@
           "command": "wpfXamlViewer.restoreProject",
           "when": "resourceExtname == .csproj && isWorkspaceTrusted",
           "group": "7_wpfXamlBuild@4"
+        },
+        {
+          "submenu": "wpfXamlViewer.configMenu",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted || resourceExtname == .slnf && isWorkspaceTrusted",
+          "group": "7_wpfXamlBuild@5"
         }
       ],
       "editor/context": [
@@ -150,8 +179,64 @@
           "when": "false"
         },
         {
+          "command": "wpfXamlViewer.buildProjectDebug",
+          "when": "false"
+        },
+        {
+          "command": "wpfXamlViewer.buildProjectRelease",
+          "when": "false"
+        },
+        {
+          "command": "wpfXamlViewer.rebuildProjectDebug",
+          "when": "false"
+        },
+        {
+          "command": "wpfXamlViewer.rebuildProjectRelease",
+          "when": "false"
+        },
+        {
+          "command": "wpfXamlViewer.cleanProjectDebug",
+          "when": "false"
+        },
+        {
+          "command": "wpfXamlViewer.cleanProjectRelease",
+          "when": "false"
+        },
+        {
           "command": "wpfXamlViewer.buildXamlProject",
           "when": "resourceExtname == .xaml && isWorkspaceTrusted"
+        }
+      ],
+      "wpfXamlViewer.configMenu": [
+        {
+          "command": "wpfXamlViewer.buildProjectDebug",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted || resourceExtname == .slnf && isWorkspaceTrusted",
+          "group": "1_build@1"
+        },
+        {
+          "command": "wpfXamlViewer.buildProjectRelease",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted || resourceExtname == .slnf && isWorkspaceTrusted",
+          "group": "1_build@2"
+        },
+        {
+          "command": "wpfXamlViewer.rebuildProjectDebug",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted",
+          "group": "2_rebuild@1"
+        },
+        {
+          "command": "wpfXamlViewer.rebuildProjectRelease",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted",
+          "group": "2_rebuild@2"
+        },
+        {
+          "command": "wpfXamlViewer.cleanProjectDebug",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted || resourceExtname == .slnf && isWorkspaceTrusted",
+          "group": "3_clean@1"
+        },
+        {
+          "command": "wpfXamlViewer.cleanProjectRelease",
+          "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted || resourceExtname == .slnf && isWorkspaceTrusted",
+          "group": "3_clean@2"
         }
       ]
     },
@@ -172,6 +257,12 @@
             "description": ".csproj/.sln 경로"
           }
         }
+      }
+    ],
+    "submenus": [
+      {
+        "id": "wpfXamlViewer.configMenu",
+        "label": "WPF XAML: 구성 선택 빌드"
       }
     ]
   },

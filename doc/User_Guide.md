@@ -35,6 +35,12 @@
 | `wpfXamlViewer.rebuildProject` | WPF XAML: 프로젝트 다시 빌드 | `.csproj` 우클릭. `dotnet build --no-incremental`. |
 | `wpfXamlViewer.cleanProject` | WPF XAML: 프로젝트 정리 | `.csproj`/`.sln` 우클릭. `dotnet clean`. |
 | `wpfXamlViewer.restoreProject` | WPF XAML: 프로젝트 복원 | `.csproj` 우클릭. `dotnet restore`. |
+| `wpfXamlViewer.buildProjectDebug` | WPF XAML: 빌드 - Debug | **우클릭 → WPF XAML: 구성 선택 빌드 → 빌드 - Debug**. `dotnet build -c <구성>`. 설정 `buildConfiguration`과 무관하게 Debug로 실행한다. |
+| `wpfXamlViewer.buildProjectRelease` | WPF XAML: 빌드 - Release | **우클릭 → WPF XAML: 구성 선택 빌드 → 빌드 - Release**. `dotnet build -c <구성>`. 설정 `buildConfiguration`과 무관하게 Release로 실행한다. |
+| `wpfXamlViewer.rebuildProjectDebug` | WPF XAML: 다시 빌드 - Debug | **우클릭 → WPF XAML: 구성 선택 빌드 → 다시 빌드 - Debug**. `dotnet build -c <구성> --no-incremental`(`.csproj`만). 설정 `buildConfiguration`과 무관하게 Debug로 실행한다. |
+| `wpfXamlViewer.rebuildProjectRelease` | WPF XAML: 다시 빌드 - Release | **우클릭 → WPF XAML: 구성 선택 빌드 → 다시 빌드 - Release**. `dotnet build -c <구성> --no-incremental`(`.csproj`만). 설정 `buildConfiguration`과 무관하게 Release로 실행한다. |
+| `wpfXamlViewer.cleanProjectDebug` | WPF XAML: 정리 - Debug | **우클릭 → WPF XAML: 구성 선택 빌드 → 정리 - Debug**. `dotnet clean -c <구성>`. 설정 `buildConfiguration`과 무관하게 Debug로 실행한다. |
+| `wpfXamlViewer.cleanProjectRelease` | WPF XAML: 정리 - Release | **우클릭 → WPF XAML: 구성 선택 빌드 → 정리 - Release**. `dotnet clean -c <구성>`. 설정 `buildConfiguration`과 무관하게 Release로 실행한다. |
 | `wpfXamlViewer.buildXamlProject` | WPF XAML: 이 XAML의 프로젝트 빌드 | `.xaml` 에디터 우클릭(또는 명령 팔레트). 그 파일에서 위로 올라가 가장 가까운 `.csproj`를 빌드한다. |
 
 ### 설정
@@ -47,6 +53,7 @@
 | `wpfXamlViewer.buildExtraArgs` | `[]` | `dotnet` 인자 끝에 그대로 덧붙인다(예: `["-p:RunAnalyzers=false"]`). 최대 20개, 각 200자. 신뢰하지 않은 폴더에서는 읽지 않는다. |
 
 ### 프로젝트 빌드/정리
+- **Debug/Release를 그때그때 고르려면** `.csproj`/`.sln`/`.slnx`/`.slnf`를 우클릭 → **WPF XAML: 구성 선택 빌드** 서브메뉴에서 빌드/다시 빌드(`.csproj`만)/정리 중 하나를 Debug 또는 Release로 고른다. 위의 단일 항목(프로젝트 빌드 등)은 설정 `buildConfiguration`을 따른다. 작업 이름에 구성이 표시된다(예: `빌드 (Release): App.csproj`).
 - 탐색기에서 `.csproj`를 우클릭하면 **WPF XAML: 프로젝트 빌드 / 다시 빌드 / 정리 / 복원**이 나온다(`.sln`/`.slnx`/`.slnf`는 빌드와 정리). 선택하면 **그 프로젝트만** `dotnet`으로 실행하고, 출력은 터미널 패널에 나오며 컴파일 오류는 **문제(Problems) 패널**에 올라가 클릭하면 해당 줄로 이동한다.
 - **의존 프로젝트는 자동으로 함께 빌드된다.** `.csproj`의 `ProjectReference`로 연결된 프로젝트를 MSBuild가 먼저 빌드하므로 따로 고를 필요가 없다(역방향, 곧 "이 프로젝트를 참조하는 쪽"은 자동이 아니다).
 - **솔루션 전체 빌드가 오래 걸리는 이유**: `.sln`은 라이브러리를 모든 대상 프레임워크(예: net462~net10, netstandard)로 빌드한다. 평소에는 필요한 프로젝트만 우클릭 빌드하거나(필요한 TFM 하나만 빌드됨), `buildTargetFramework`로 TFM을 하나로 줄이고, 분석기가 무거우면 `buildExtraArgs`에 `-p:RunAnalyzers=false`를 넣는다. `.slnf`(솔루션 필터)로 필요한 프로젝트만 묶어 빌드할 수도 있다. 실측(wpfui의 `Wpf.Ui`, `--no-incremental`): 모든 TFM(6개) 58초 → `-f` 한 TFM 18초 → 분석기 끔 27초 → 둘 다 8초.

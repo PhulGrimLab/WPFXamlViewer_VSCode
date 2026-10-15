@@ -1,5 +1,9 @@
 # 변경 이력
 
+## 미출시
+### 추가
+- **우클릭 "구성 선택 빌드" 서브메뉴**: `.csproj`/`.sln`/`.slnx`/`.slnf`를 우클릭하면 빌드 / 다시 빌드(`.csproj`만) / 정리를 **Debug 또는 Release로 직접 골라** 실행한다(설정 `buildConfiguration`과 무관). 기존 단일 항목은 그대로 설정을 따른다. 작업 이름에 구성이 표시된다.
+
 ## 0.1.1 (2026-10-14, 미리보기)
 ### 수정
 - **자체 포함(self-contained) 출력의 프로젝트에서 WPF UI 같은 라이브러리 컨트롤이 해석되지 않던 문제**: 출력 폴더에 든 프레임워크 복사본(`PresentationFramework`, `System.Xaml`, `WindowsBase` 등)을 사용자 컨텍스트에 또 로드해 라이브러리의 `XmlnsDefinition` 특성이 호스트의 WPF에서 보이지 않았다(`ui:FluentWindow`/`ui:SymbolIcon` 등 `XamlParse` 오류). 호스트의 공유 프레임워크에 있는 어셈블리는 사용자 출력의 복사본 대신 호스트 것을 쓴다. (PathDock `SelfContained=true`로 확인: 뷰 13개 중 12개 오류 → 0개)
