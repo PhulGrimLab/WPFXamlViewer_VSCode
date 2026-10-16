@@ -2,7 +2,7 @@
   "name": "wpf-xaml-live-preview",
   "displayName": "WPF XAML Live Preview",
   "description": "%extension.description%",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "phulgrimlab",
   "license": "GPL-3.0-only",
   "preview": true,
@@ -96,6 +96,10 @@
       {
         "command": "wpfXamlViewer.switchLanguage",
         "title": "%command.switchLanguage.title%"
+      },
+      {
+        "command": "wpfXamlViewer.resetProjectConsent",
+        "title": "%command.resetProjectConsent.title%"
       }
     ],
     "configuration": {
