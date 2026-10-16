@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AutoBuildState, MissingBuildAction, WARNING_PROJECT_TIER0, decideMissingBuild, describeMissingBuild } from './autoBuild';
 import { CONFIG_AUTO_BUILD, CONFIG_AUTO_OPEN, CONFIG_SECTION, PREVIEW_VIEW_TYPE, RENDER_DEBOUNCE_MS } from './constants';
-import { Debouncer } from './debouncer';
+import { Debouncer, adaptiveDebounceMs } from './debouncer';
 import { toZeroBasedPosition } from './diagnostics';
 import { findNearestProject } from './dotnetCommands';
 import { HitElement, pickElementAt, pickElementAtCursor } from './hitTest';
@@ -48,6 +48,8 @@ export class PreviewController implements vscode.Disposable {
     private _panel: vscode.WebviewPanel | undefined;
     private _document: vscode.TextDocument | undefined;
     private readonly _debouncer = new Debouncer(RENDER_DEBOUNCE_MS);
+    /** 마지막으로 반영한 렌더가 걸린 시간(ms). 디바운스 지연을 정하는 데 쓴다. */
+    private _lastRenderMs: number | undefined;
     private readonly _diagnostics = vscode.languages.createDiagnosticCollection(DIAGNOSTIC_SOURCE);
     private readonly _status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
     private readonly _subscriptions: vscode.Disposable[] = [];
@@ -70,7 +72,7 @@ export class PreviewController implements vscode.Disposable {
         this._subscriptions.push(
             vscode.workspace.onDidChangeTextDocument((e) => {
                 if (e.document === this._document) {
-                    this._debouncer.schedule(() => this._renderNow());
+                    this._debouncer.schedule(() => this._renderNow(), adaptiveDebounceMs(this._lastRenderMs));
                 } else {
                     // 미리보기 대상이 아닌 문서의 편집은 무시한다.
                 }
@@ -303,6 +305,7 @@ export class PreviewController implements vscode.Disposable {
         this._setStatus(t('preview.rendering'), undefined);
         this._post({ type: 'busy' });
         this._askConsentIfNeeded(gate);
+        const sentAt = Date.now();
         this._client.renderLatest({
             lang: getLanguage(),
             xaml: document.getText(),
@@ -320,6 +323,7 @@ export class PreviewController implements vscode.Disposable {
                     // 최신 결과: 아래에서 반영.
                 }
                 this._renderCount++;
+                this._lastRenderMs = Date.now() - sentAt;
                 this._diagnostics.delete(document.uri);
                 this._elements = outcome.result.elements;
                 this._highlightedId = undefined; // 새 렌더의 좌표계: 강조를 다시 계산한다.

@@ -63,7 +63,7 @@ internal static class UntrustedXamlGuard
     }
 
     /// <summary>파일/네트워크 위치로 보이는 값: file:, http(s):, ftp:, UNC(\\host, //host), 드라이브 경로(C:\ 또는 C:/). pack://application 과 data: 는 허용한다.</summary>
-    private static readonly Regex ExternalLocation = new(@"^\s*(file:|https?:|ftp:|\\\\|//|[A-Za-z]:[\\/])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex ExternalLocation = new(@"^\s*(file:|https?:|ftp:|\\\\|//|[A-Za-z]:[\\/])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>XAML 2009의 생성 지시어(임의 생성자 인자/정적 팩터리 호출). WPF 느슨한 XAML에서도 읽힐 수 있어 막는다.</summary>
     private static readonly HashSet<string> BlockedDirectives = new(StringComparer.Ordinal) { "FactoryMethod", "Arguments" };

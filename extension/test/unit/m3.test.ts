@@ -76,3 +76,15 @@ describe('웹뷰 메시지 (X-M01, X-M02)', () => {
         assert.ok(html.includes('<script nonce="abc">'));
     });
 });
+
+describe('적응형 디바운스 (X-D02)', () => {
+    it('빠른 렌더는 짧게(최소 100ms), 느린 렌더는 렌더 시간의 2배(최대 300ms), 기록이 없으면 최대', () => {
+        const { adaptiveDebounceMs } = require('../../src/debouncer') as typeof import('../../src/debouncer');
+        assert.strictEqual(adaptiveDebounceMs(undefined), 300);
+        assert.strictEqual(adaptiveDebounceMs(5), 100);
+        assert.strictEqual(adaptiveDebounceMs(60), 120);
+        assert.strictEqual(adaptiveDebounceMs(120), 240);
+        assert.strictEqual(adaptiveDebounceMs(1700), 300);
+        assert.strictEqual(adaptiveDebounceMs(Number.NaN), 300);
+    });
+});
