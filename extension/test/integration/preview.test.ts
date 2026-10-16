@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { COMMAND_OPEN_PREVIEW } from '../../src/constants';
 import { ExtensionTestApi } from '../../src/extension';
+import { getLanguage } from '../../src/i18n';
+import { createUserProject } from '../support/userProject';
 
 const NS = 'xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"';
 const VALID_XAML = `<Button ${NS} Width="120" Height="40" Content="Hello"/>`;
@@ -88,6 +90,52 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         // 다음 테스트를 위해 원래 문서를 다시 활성화한다.
         // (미리보기 탭이 아닌 일반 편집기는 다른 문서를 열면 교체되어 기존 TextEditor가 닫히므로 새로 받아 둔다.)
         editor = await vscode.window.showTextDocument(editor.document);
+    });
+
+    it('I-11 빌드 산출물이 없으면 프로젝트를 자동 빌드하고 다시 그린다(빌드 성공)', async function () {
+        this.timeout(180000); // 첫 빌드는 복원 때문에 오래 걸릴 수 있다.
+        const workspace = process.env.XAMLVIEWER_TEST_WORKSPACE as string;
+        const csproj = '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><AssemblyName>SampleControls</AssemblyName></PropertyGroup></Project>';
+        const project = createUserProject(workspace, 'AutoBuildOk',
+            '<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:s="clr-namespace:SampleControls;assembly=SampleControls"><s:RedBox/></StackPanel>', false, csproj);
+        await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(project.xamlPath));
+        await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
+        await waitUntil(() => api.getLogLines().some((l) => l.includes('autoBuild end ok=true')), 120000);
+        assert.ok(fs.existsSync(path.join(project.dir, 'bin')), '자동 빌드가 bin을 만들어야 한다');
+        const rendersAfterBuild = api.getPreviewState().renderCount;
+        await waitUntil(() => api.getPreviewState().renderCount > rendersAfterBuild, 30000); // 빌드 뒤 다시 그렸다.
+        editor = await vscode.window.showTextDocument(editor.document);
+    });
+
+    it('I-12 자동 빌드가 실패하면 실패를 알리고 다시 빌드를 반복하지 않는다', async () => {
+        const workspace = process.env.XAMLVIEWER_TEST_WORKSPACE as string;
+        // TargetFramework가 없는 SDK 프로젝트는 빌드가 실패한다.
+        const project = createUserProject(workspace, 'AutoBuildFail',
+            '<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:s="clr-namespace:SampleControls;assembly=SampleControls"><s:RedBox/></StackPanel>', false);
+        await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(project.xamlPath));
+        const startsBefore = api.getLogLines().filter((l) => l.includes('autoBuild start')).length;
+        await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
+        await waitUntil(() => api.getLogLines().filter((l) => l.includes('autoBuild end ok=false')).length >= 1, 120000);
+        await new Promise((r) => setTimeout(r, 1500)); // 실패 직후 반복 빌드가 시작되지 않는지 잠시 지켜본다.
+        const starts = api.getLogLines().filter((l) => l.includes('autoBuild start')).length - startsBefore;
+        assert.strictEqual(starts, 1, '실패한 프로젝트를 다시 자동 빌드하면 안 된다');
+        editor = await vscode.window.showTextDocument(editor.document);
+    });
+
+    it('I-13 표시 언어 설정을 바꾸면 바로 적용되고, 미리보기가 새 언어로 다시 그려진다', async () => {
+        const config = vscode.workspace.getConfiguration('wpfXamlViewer');
+        try {
+            const before = api.getPreviewState().renderCount;
+            await config.update('language', 'en', vscode.ConfigurationTarget.Global);
+            await waitUntil(() => getLanguage() === 'en');
+            await waitUntil(() => api.getPreviewState().renderCount > before); // 새 언어로 다시 그렸다.
+            await config.update('language', 'ko', vscode.ConfigurationTarget.Global);
+            await waitUntil(() => getLanguage() === 'ko');
+        } finally {
+            await config.update('language', undefined, vscode.ConfigurationTarget.Global);
+        }
+        // auto: 테스트용 VS Code는 영어 표시 언어이므로 영어가 된다.
+        await waitUntil(() => getLanguage() === 'en');
     });
 
     /** M5 시험용: 여러 요소가 있는 XAML을 워크스페이스에 만들어 열고 미리보기를 렌더한 뒤 요소 수가 채워질 때까지 기다린다. */

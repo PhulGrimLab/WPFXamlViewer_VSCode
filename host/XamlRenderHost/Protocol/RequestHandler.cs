@@ -132,6 +132,7 @@ public sealed class RequestHandler
             width = p["width"]?.GetValue<double>();
             height = p["height"]?.GetValue<double>();
             dpi = p["dpi"]?.GetValue<double>() ?? XamlRenderer.DefaultDpi;
+            Loc.Set(p["lang"]?.GetValue<string>()); // 경고/오류 문구의 언어(없으면 한국어).
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
         {
@@ -194,7 +195,7 @@ public sealed class RequestHandler
             {
                 // 내부 예외 없음: 위 로그가 전부다.
             }
-            return Error(id, ex.Code, ex.Message, ex.Line, ex.Column);
+            return Error(id, ex.Code, ex.Message, ex.Line, ex.Column, ex.ProjectReason);
         }
     }
 
@@ -312,7 +313,7 @@ public sealed class RequestHandler
     private static string Ok(JsonNode? id, JsonObject result)
         => new JsonObject { ["id"] = id, ["ok"] = true, ["result"] = result }.ToJsonString();
 
-    private static string Error(JsonNode? id, string code, string message, int? line = null, int? column = null)
+    private static string Error(JsonNode? id, string code, string message, int? line = null, int? column = null, string? projectReason = null)
     {
         var error = new JsonObject { ["code"] = code, ["message"] = message };
         if (line.HasValue)
@@ -330,6 +331,14 @@ public sealed class RequestHandler
         else
         {
             // 열 정보 없음: 필드를 생략한다.
+        }
+        if (projectReason != null)
+        {
+            error["projectReason"] = projectReason;
+        }
+        else
+        {
+            // 프로젝트 이유 없음: 필드를 생략한다.
         }
         return new JsonObject { ["id"] = id, ["ok"] = false, ["error"] = error }.ToJsonString();
     }

@@ -51,12 +51,12 @@ export interface UserProject {
 
 /**
  * `<parent>/<name>` 에 프로젝트 폴더를 만든다: `.csproj`(빈 SDK 프로젝트), 빌드 산출물(withBuild), Main.xaml(xaml 내용).
- * withBuild=false면 bin이 없는 상태("먼저 dotnet build" 시나리오).
+ * withBuild=false면 bin이 없는 상태("먼저 dotnet build" 시나리오). csproj를 주면 그 내용으로 만든다(실제로 빌드되는 프로젝트 등).
  */
-export function createUserProject(parent: string, name: string, xaml: string, withBuild = true): UserProject {
+export function createUserProject(parent: string, name: string, xaml: string, withBuild = true, csproj = '<Project Sdk="Microsoft.NET.Sdk"/>'): UserProject {
     const dir = path.join(parent, name);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, `${SAMPLE_ASSEMBLY}.csproj`), '<Project Sdk="Microsoft.NET.Sdk"/>');
+    fs.writeFileSync(path.join(dir, `${SAMPLE_ASSEMBLY}.csproj`), csproj);
     if (withBuild) {
         fs.cpSync(buildSampleControls(), path.join(dir, BIN_RELATIVE), { recursive: true });
     } else {

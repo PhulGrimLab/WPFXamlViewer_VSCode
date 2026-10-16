@@ -1,13 +1,19 @@
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 import * as vscode from 'vscode';
-import { CONFIG_AUTO_OPEN, CONFIG_SECTION, PREVIEW_VIEW_TYPE, RENDER_DEBOUNCE_MS } from './constants';
+import { AutoBuildState, MissingBuildAction, WARNING_PROJECT_TIER0, decideMissingBuild, describeMissingBuild } from './autoBuild';
+import { CONFIG_AUTO_BUILD, CONFIG_AUTO_OPEN, CONFIG_SECTION, PREVIEW_VIEW_TYPE, RENDER_DEBOUNCE_MS } from './constants';
 import { Debouncer } from './debouncer';
 import { toZeroBasedPosition } from './diagnostics';
+import { findNearestProject } from './dotnetCommands';
 import { HitElement, pickElementAt, pickElementAtCursor } from './hitTest';
-import { HostClient, HostRequestError, RenderWarning } from './hostClient';
+import { HostClient, HostRequestError, LogFn, RenderWarning } from './hostClient';
+import { getLanguage, t } from './i18n';
+import { LogId } from './logFormat';
+import { buildProjectAndWait } from './projectBuild';
 import { buildPreviewHtml } from './previewHtml';
 import { Background, ToWebviewMessage, parseFromWebview } from './previewMessages';
-import { DOTNET_DESKTOP_RUNTIME_URL, DOTNET_RUNTIME_MISSING_MESSAGE, isDotNetRuntimeMissing } from './runtimeCheck';
+import { DOTNET_DESKTOP_RUNTIME_URL, dotNetRuntimeMissingMessage, isDotNetRuntimeMissing } from './runtimeCheck';
 
 /** 진단/상태 표시에 쓰는 출처 이름. */
 const DIAGNOSTIC_SOURCE = 'WPF XAML Live Preview';
@@ -46,8 +52,12 @@ export class PreviewController implements vscode.Disposable {
     private _viewState: ViewState | undefined;
     private _size: { width?: number; height?: number } = {};
     private _warningCodes: string[] = [];
+    /** 프로젝트(.csproj)별 자동 빌드 상태. 산출물이 있는 렌더가 성공하면 비운다. */
+    private readonly _autoBuild = new Map<string, AutoBuildState>();
+    /** 이미 알림을 띄운 (상태, 문서) 조합. 편집할 때마다 같은 알림이 반복되지 않게 한다. */
+    private readonly _notified = new Set<string>();
 
-    constructor(private readonly _client: HostClient) {
+    constructor(private readonly _client: HostClient, private readonly _log: LogFn = () => undefined) {
         this._subscriptions.push(
             vscode.workspace.onDidChangeTextDocument((e) => {
                 if (e.document === this._document) {
@@ -83,6 +93,16 @@ export class PreviewController implements vscode.Disposable {
             this._renderNow();
         } else {
             // XAML이 아닌 에디터이거나 패널이 없는데 자동 열기가 꺼짐: 마지막 미리보기를 유지한다.
+        }
+    }
+
+    /** 표시 언어가 바뀌었다: 웹뷰 도구 모음을 새 언어로 다시 만들고 다시 그린다(줌 같은 보기 상태는 초기화된다). */
+    applyLanguage(): void {
+        if (this._panel) {
+            this._panel.webview.html = buildPreviewHtml(crypto.randomBytes(NONCE_BYTES).toString('hex'), this._panel.webview.cspSource, getLanguage());
+            this._renderNow();
+        } else {
+            // 열린 미리보기가 없다: 다음에 여는 패널이 새 언어로 만들어진다.
         }
     }
 
@@ -146,7 +166,7 @@ export class PreviewController implements vscode.Disposable {
     open(): void {
         const editor = vscode.window.activeTextEditor;
         if (!editor || !this._isXaml(editor.document)) {
-            void vscode.window.showInformationMessage('WPF XAML: .xaml 파일을 연 상태에서 실행해 주세요.');
+            void vscode.window.showInformationMessage(t('preview.openXaml'));
             return;
         } else {
             this._document = editor.document;
@@ -157,6 +177,8 @@ export class PreviewController implements vscode.Disposable {
         } else {
             this._panel = this._createPanel();
         }
+        this._autoBuild.clear(); // 사용자가 미리보기를 다시 열었다: 이전 빌드 실패 기록을 지우고 새로 판단한다.
+        this._notified.clear();
         this._renderNow();
     }
 
@@ -181,7 +203,7 @@ export class PreviewController implements vscode.Disposable {
             PREVIEW_VIEW_TYPE, 'WPF XAML Preview', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
             { enableScripts: true, retainContextWhenHidden: true });
         const nonce = crypto.randomBytes(NONCE_BYTES).toString('hex');
-        panel.webview.html = buildPreviewHtml(nonce, panel.webview.cspSource);
+        panel.webview.html = buildPreviewHtml(nonce, panel.webview.cspSource, getLanguage());
         panel.webview.onDidReceiveMessage((raw) => void this._handleWebviewMessage(raw));
         panel.onDidDispose(() => {
             this._panel = undefined;
@@ -267,9 +289,10 @@ export class PreviewController implements vscode.Disposable {
             // 렌더 대상 있음.
         }
 
-        this._setStatus('$(sync~spin) XAML 렌더 중', undefined);
+        this._setStatus(t('preview.rendering'), undefined);
         this._post({ type: 'busy' });
         this._client.renderLatest({
+            lang: getLanguage(),
             xaml: document.getText(),
             filePath: document.uri.scheme === 'file' ? document.uri.fsPath : undefined,
             // 사용자 코드를 실행하는 Tier 1은 신뢰된 워크스페이스에서만 허용한다(doc/01 3.3 규칙 1).
@@ -290,6 +313,7 @@ export class PreviewController implements vscode.Disposable {
                 this._post({ type: 'image', png: outcome.result.png, width: outcome.result.width, height: outcome.result.height });
                 this._warningCodes = outcome.result.warnings.map((w) => w.code);
                 this._showSuccess(outcome.result.warnings);
+                this._afterSuccess(document, outcome.result.project?.reason, outcome.result.warnings);
                 const cursor = vscode.window.visibleTextEditors.find((e) => e.document === document)?.selection.active;
                 if (cursor) {
                     this._highlightForCursor(cursor);
@@ -303,10 +327,10 @@ export class PreviewController implements vscode.Disposable {
     /** 성공 표시: 호스트가 변경/대체한 내용(경고)이 있으면 개수를 보여 주고 툴팁에 목록을 둔다. */
     private _showSuccess(warnings: RenderWarning[]): void {
         if (warnings.length === 0) {
-            this._setStatus('$(check) XAML OK', undefined);
+            this._setStatus(t('preview.ok'), undefined);
             this._status.tooltip = undefined;
         } else {
-            this._setStatus(`$(check) XAML OK (경고 ${warnings.length})`, undefined);
+            this._setStatus(t('preview.okWarnings', warnings.length), undefined);
             const lines = warnings.map((w) => `${w.line ? `L${w.line} ` : ''}${w.message}`);
             this._status.tooltip = lines.join('\n');
         }
@@ -314,8 +338,15 @@ export class PreviewController implements vscode.Disposable {
 
     /** 렌더 실패 처리: 호스트 오류는 Problems에, 그 외(타임아웃/크래시/시작 불가)는 알림에 표시한다. */
     private _showFailure(document: vscode.TextDocument, error: Error): void {
-        this._setStatus('$(error) XAML 오류', new vscode.ThemeColor('statusBarItem.errorBackground'));
+        const missing = error instanceof HostRequestError ? this._missingBuildAction(document, error.projectReason, true) : 'none';
+        this._setStatus(t('preview.error'), new vscode.ThemeColor('statusBarItem.errorBackground'));
         this._post({ type: 'error', message: error.message });
+        if (missing !== 'none') {
+            // 빌드 산출물이 없어 실패했다: 자동 빌드(또는 빌드 필요/실패 안내)로 이어간다. 원래 XAML 오류도 Problems에 함께 남긴다.
+            this._reportMissingBuild(document, missing, true);
+        } else {
+            // 산출물 문제가 아닌 일반 실패.
+        }
         if (error instanceof HostRequestError) {
             const pos = toZeroBasedPosition(error.line, error.col, document.lineCount);
             const lineEnd = document.lineAt(pos.line).range.end.character;
@@ -325,8 +356,8 @@ export class PreviewController implements vscode.Disposable {
             this._diagnostics.set(document.uri, [diagnostic]);
         } else if (isDotNetRuntimeMissing(error)) {
             // 호스트가 .NET Desktop Runtime 부재로 시작하지 못했다: 원인과 설치 경로를 알려 준다(I-12).
-            const download = '.NET 설치 페이지 열기';
-            void vscode.window.showErrorMessage(DOTNET_RUNTIME_MISSING_MESSAGE, download).then((choice) => {
+            const download = t('runtime.openPage');
+            void vscode.window.showErrorMessage(dotNetRuntimeMissingMessage(), download).then((choice) => {
                 if (choice === download) {
                     void vscode.env.openExternal(vscode.Uri.parse(DOTNET_DESKTOP_RUNTIME_URL));
                 } else {
@@ -334,8 +365,114 @@ export class PreviewController implements vscode.Disposable {
                 }
             });
         } else {
-            void vscode.window.showErrorMessage(`WPF XAML Live Preview: ${error.message} (자세한 내용은 출력 채널 확인)`);
+            void vscode.window.showErrorMessage(t('preview.hostFailure', error.message));
         }
+    }
+
+    /** 렌더 성공 후: 산출물이 있으면 자동 빌드 기록을 비우고, 산출물이 없어 자리표시자가 생겼으면 자동 빌드/안내를 시작한다. */
+    private _afterSuccess(document: vscode.TextDocument, reason: string | undefined, warnings: RenderWarning[]): void {
+        if (reason === 'Loaded') {
+            this._autoBuild.clear();
+            this._notified.clear(); // 프로젝트 DLL을 불러왔다: 이전 실패/대기 기록을 비운다(나중에 다시 정리해도 자동 빌드가 동작하도록).
+            return;
+        } else {
+            // 산출물 없음 여부를 아래에서 판단.
+        }
+        const placeholdersShown = warnings.some((w) => w.code === WARNING_PROJECT_TIER0);
+        const action = this._missingBuildAction(document, reason, placeholdersShown);
+        if (action !== 'none') {
+            this._reportMissingBuild(document, action, false);
+        } else {
+            // 빌드가 필요한 상황이 아니다.
+        }
+    }
+
+    /** 이 문서가 속한 프로젝트와 현재 설정/신뢰/상태로 "산출물 부재" 상황의 처리를 결정한다. */
+    private _missingBuildAction(document: vscode.TextDocument, reason: string | undefined, needed: boolean): MissingBuildAction {
+        const project = this._projectOf(document);
+        return decideMissingBuild({
+            reason,
+            needed,
+            autoBuildEnabled: vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>(CONFIG_AUTO_BUILD, true),
+            trusted: vscode.workspace.isTrusted,
+            project,
+            state: project ? this._autoBuild.get(project) : undefined,
+        });
+    }
+
+    private _projectOf(document: vscode.TextDocument): string | undefined {
+        return document.uri.scheme === 'file' ? findNearestProject(document.uri.fsPath, (directory) => fs.readdirSync(directory)) : undefined;
+    }
+
+    /** 결정에 따라 빌드를 시작하거나 안내를 표시한다. `failed`: 이번 렌더가 실패했는가(오류 화면을 이미 띄웠다). */
+    private _reportMissingBuild(document: vscode.TextDocument, action: MissingBuildAction, failed: boolean): void {
+        const project = this._projectOf(document);
+        const message = describeMissingBuild(action, document.uri.fsPath, project);
+        if (action === 'build' && project) {
+            void this._buildThenRender(document, project, message);
+        } else if (action === 'wait') {
+            this._setStatus(t('preview.buildRunning'), undefined);
+        } else {
+            // 자동 빌드를 하지 않는다(설정 꺼짐/미신뢰/실패 이력 등): 왜 미리보기가 안 되는지 알린다.
+            this._setStatus(t('preview.buildNeeded'), new vscode.ThemeColor('statusBarItem.errorBackground'));
+            if (failed) {
+                this._post({ type: 'error', message });
+            } else {
+                // 렌더는 성공(자리표시자)했으므로 이미지를 유지하고 상태 표시줄 툴팁으로만 알린다.
+            }
+            this._status.tooltip = message;
+            this._notifyBuildNeeded(document, action, message);
+        }
+    }
+
+    /** 프로젝트를 빌드하고(진행을 미리보기에 표시), 성공하면 다시 렌더하고, 실패하면 그 사실을 표시한다. */
+    private async _buildThenRender(document: vscode.TextDocument, project: string, message: string): Promise<void> {
+        this._autoBuild.set(project, 'building');
+        this._notified.clear();
+        this._setStatus(t('preview.buildRunning'), undefined);
+        this._status.tooltip = message;
+        this._post({ type: 'busy' });
+        this._post({ type: 'error', message });
+        this._log('Info', LogId.ProjectBuild, `autoBuild start project=${project.split(/[\\/]/).pop()}`);
+        const outcome = await buildProjectAndWait(project, this._log);
+        this._log('Info', LogId.ProjectBuild, `autoBuild end ok=${outcome.ok} exitCode=${outcome.exitCode ?? 'n/a'}`);
+        if (!this._panel || this._document !== document) {
+            this._autoBuild.delete(project); // 그 사이 미리보기가 닫히거나 다른 문서로 바뀌었다: 다음에 다시 판단한다.
+            return;
+        } else {
+            // 같은 미리보기를 보고 있다.
+        }
+        if (outcome.ok) {
+            this._autoBuild.set(project, 'noOutput'); // 다시 그렸을 때 산출물을 찾으면(Loaded) 비운다. 못 찾으면 이 값으로 반복을 막고 안내한다.
+            this._renderNow();
+        } else {
+            this._autoBuild.set(project, 'failed');
+            this._reportMissingBuild(document, 'failedBefore', true);
+        }
+    }
+
+    /** 빌드가 필요/실패했음을 알림으로 알린다(같은 안내를 반복해 띄우지 않도록 "다시 빌드" 선택지만 준다). */
+    private _notifyBuildNeeded(document: vscode.TextDocument, action: MissingBuildAction, message: string): void {
+        const key = `${action}|${document.uri.fsPath}`;
+        if (this._notified.has(key)) {
+            return;
+        } else {
+            this._notified.add(key);
+        }
+        const retry = t('auto.retry');
+        const buttons = action === 'failedBefore' || action === 'noOutput' || action === 'disabled' ? [retry] : [];
+        void vscode.window.showWarningMessage(`WPF XAML Live Preview: ${message}`, ...buttons).then((choice) => {
+            if (choice === retry) {
+                const project = this._projectOf(document);
+                if (project) {
+                    void this._buildThenRender(document, project, describeMissingBuild('build', document.uri.fsPath, project));
+                } else {
+                    // 프로젝트를 찾지 못해 다시 빌드할 수 없다.
+                }
+            } else {
+                // 알림만 닫음.
+            }
+        });
     }
 
     private _post(message: ToWebviewMessage): void {

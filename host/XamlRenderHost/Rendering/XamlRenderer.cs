@@ -78,7 +78,7 @@ public static class XamlRenderer
         _ = DesignModeEnabled; // 정적 초기화를 확실히 수행한다(어떤 WPF 객체도 만들기 전).
         if (string.IsNullOrWhiteSpace(request.Xaml))
         {
-            throw new XamlRenderException(RenderErrorCodes.EmptyInput, "XAML 입력이 비어 있습니다.");
+            throw new XamlRenderException(RenderErrorCodes.EmptyInput, Loc.T("XAML 입력이 비어 있습니다.", "The XAML input is empty."));
         }
         else
         {
@@ -99,13 +99,22 @@ public static class XamlRenderer
             _internalAccessAssembly = tier.Tier == 1 ? tier.Assembly : null;
             try
             {
-                return RenderCore(request, tier, schema, tagElements: true);
+                try
+                {
+                    return RenderCore(request, tier, schema, tagElements: true);
+                }
+                catch (XamlRenderException ex) when (ex.Code == RenderErrorCodes.XamlParse && ex.Line.HasValue)
+                {
+                    // HitMap용 Uid 태그가 같은 줄의 열 위치를 밀어 놓았다. 오류 위치(특히 열)를 원본 기준으로 정확히 보고하려고
+                    // 태그 없이 한 번 더 파싱한다(오류 경로에서만 드는 비용). 뜻밖에 성공하면 그 결과(HitMap 없음)를 돌려준다.
+                    return RenderCore(request, tier, schema, tagElements: false);
+                }
             }
-            catch (XamlRenderException ex) when (ex.Code == RenderErrorCodes.XamlParse && ex.Line.HasValue)
+            catch (XamlRenderException ex) when (tier.Reason == Projects.ProjectLookupReasons.NoArtifact)
             {
-                // HitMap용 Uid 태그가 같은 줄의 열 위치를 밀어 놓았다. 오류 위치(특히 열)를 원본 기준으로 정확히 보고하려고
-                // 태그 없이 한 번 더 파싱한다(오류 경로에서만 드는 비용). 뜻밖에 성공하면 그 결과(HitMap 없음)를 돌려준다.
-                return RenderCore(request, tier, schema, tagElements: false);
+                // 빌드 산출물이 없으면 프로젝트 안의 형식을 못 찾아 실패하는 일이 흔하다. 이유를 실어 확장이 먼저 빌드하도록 안내할 수 있게 한다.
+                ex.ProjectReason = tier.Reason;
+                throw;
             }
             finally
             {
@@ -128,7 +137,7 @@ public static class XamlRenderer
             var applicationFailure = HostApplication.ApplyResources(preprocessed.ApplicationResourcesXml, schema, tier.AssemblyPath);
             if (applicationFailure != null)
             {
-                warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, $"앱 리소스를 Application에 적용하지 못했습니다: {applicationFailure}", null, null));
+                warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, Loc.T($"앱 리소스를 Application에 적용하지 못했습니다: {applicationFailure}", $"Could not apply app resources to Application: {applicationFailure}"), null, null));
             }
             else
             {
@@ -175,12 +184,12 @@ public static class XamlRenderer
                 {
                     result = retried;
                     warnings.Add(new RenderWarning(WarningCodes.RenderedWithHiddenWindow,
-                        $"창 핸들이 필요한 컨트롤이 있어 숨은 창에 붙여 다시 그렸습니다({firstFailure.GetType().Name}).{(retryNote == null ? string.Empty : " 지연 처리 예외: " + retryNote)}", null, null));
+                        Loc.T($"창 핸들이 필요한 컨트롤이 있어 숨은 창에 붙여 다시 그렸습니다({firstFailure.GetType().Name}).{(retryNote == null ? string.Empty : " 지연 처리 예외: " + retryNote)}", $"A control needs a window handle, so it was rendered again attached to a hidden window ({firstFailure.GetType().Name}).{(retryNote == null ? string.Empty : " Deferred exception: " + retryNote)}"), null, null));
                 }
             }
             if (result.Elements is { Count: >= HitMap.MaxElements })
             {
-                warnings.Add(new RenderWarning(WarningCodes.HitMapTruncated, $"요소가 많아 클릭 매핑을 {HitMap.MaxElements}개로 제한했습니다.", null, null));
+                warnings.Add(new RenderWarning(WarningCodes.HitMapTruncated, Loc.T($"요소가 많아 클릭 매핑을 {HitMap.MaxElements}개로 제한했습니다.", $"There are many elements, so click mapping is limited to {HitMap.MaxElements}."), null, null));
             }
             else
             {
@@ -194,7 +203,7 @@ public static class XamlRenderer
         }
         catch (Exception ex)
         {
-            throw new XamlRenderException(RenderErrorCodes.RenderFailed, $"렌더 중 오류: {ex.Message}", inner: ex);
+            throw new XamlRenderException(RenderErrorCodes.RenderFailed, Loc.T($"렌더 중 오류: {ex.Message}", $"Error while rendering: {ex.Message}"), inner: ex);
         }
     }
 
@@ -234,7 +243,7 @@ public static class XamlRenderer
                     else
                     {
                         xaml = removal.Xaml;
-                        warnings.Add(new RenderWarning(WarningCodes.InlinedElementSkipped, $"병합 사전의 {removal.TypeName} 요소를 읽지 못해 건너뜁니다: {summary}", removal.Line, removal.Column));
+                        warnings.Add(new RenderWarning(WarningCodes.InlinedElementSkipped, Loc.T($"병합 사전의 {removal.TypeName} 요소를 읽지 못해 건너뜁니다: {summary}", $"Skipped the {removal.TypeName} element of a merged dictionary because it could not be read: {summary}"), removal.Line, removal.Column));
                     }
                 }
                 else
@@ -255,7 +264,7 @@ public static class XamlRenderer
                 else
                 {
                     xaml = removal.Xaml;
-                    warnings.Add(new RenderWarning(WarningCodes.InlinedElementSkipped, $"병합 사전의 {removal.TypeName} 요소를 읽지 못해 건너뜁니다: {Summarize(ex)}", removal.Line, removal.Column));
+                    warnings.Add(new RenderWarning(WarningCodes.InlinedElementSkipped, Loc.T($"병합 사전의 {removal.TypeName} 요소를 읽지 못해 건너뜁니다: {Summarize(ex)}", $"Skipped the {removal.TypeName} element of a merged dictionary because it could not be read: {Summarize(ex)}"), removal.Line, removal.Column));
                 }
             }
         }
@@ -324,7 +333,7 @@ public static class XamlRenderer
         {
             throw new XamlRenderException(
                 RenderErrorCodes.UnsupportedRoot,
-                $"루트가 FrameworkElement가 아닙니다: {parsed?.GetType().Name ?? "null"}");
+                Loc.T($"루트가 FrameworkElement가 아닙니다: {parsed?.GetType().Name ?? "null"}", $"The root is not a FrameworkElement: {parsed?.GetType().Name ?? "null"}"));
         }
     }
 
@@ -496,7 +505,7 @@ public static class XamlRenderer
             source.RootVisual = root;
             var result = RenderToPng(root, width, height, dpi, sources);
             // 화면에 붙이면 Loaded 같은 이벤트가 발생해 앱 코드의 핸들러가 예외를 낼 수 있다(앱 상태가 없어서). 그림은 이미 그려졌으므로 결과를 돌려주고 경고로 알린다.
-            note = deferredFailure == null ? null : $"{deferredFailure.GetType().Name} (Loaded 등 지연 처리 중, 무시함)";
+            note = deferredFailure == null ? null : Loc.T($"{deferredFailure.GetType().Name} (Loaded 등 지연 처리 중, 무시함)", $"{deferredFailure.GetType().Name} (during deferred handling such as Loaded; ignored)");
             return result;
         }
         catch (Exception)
@@ -561,7 +570,7 @@ public static class XamlRenderer
         {
             throw new XamlRenderException(
                 RenderErrorCodes.TooLarge,
-                $"렌더 크기 {pixelWidth}x{pixelHeight}px 가 최대 {MaxPixelsPerSide}px 를 넘습니다.");
+                Loc.T($"렌더 크기 {pixelWidth}x{pixelHeight}px 가 최대 {MaxPixelsPerSide}px 를 넘습니다.", $"The render size {pixelWidth}x{pixelHeight}px exceeds the maximum of {MaxPixelsPerSide}px."));
         }
         else
         {

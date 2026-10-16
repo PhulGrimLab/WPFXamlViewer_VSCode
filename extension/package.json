@@ -1,8 +1,8 @@
 {
   "name": "wpf-xaml-live-preview",
   "displayName": "WPF XAML Live Preview",
-  "description": "VS Code에서 WPF XAML을 실제 WPF 렌더링으로 실시간 미리보기 (Windows 전용, .NET 10)",
-  "version": "0.1.1",
+  "description": "%extension.description%",
+  "version": "0.1.2",
   "publisher": "phulgrimlab",
   "license": "GPL-3.0-only",
   "preview": true,
@@ -47,51 +47,55 @@
     "commands": [
       {
         "command": "wpfXamlViewer.openPreview",
-        "title": "WPF XAML: Open Preview"
+        "title": "%command.openPreview.title%"
       },
       {
         "command": "wpfXamlViewer.buildProject",
-        "title": "WPF XAML: 프로젝트 빌드"
+        "title": "%command.buildProject.title%"
       },
       {
         "command": "wpfXamlViewer.rebuildProject",
-        "title": "WPF XAML: 프로젝트 다시 빌드"
+        "title": "%command.rebuildProject.title%"
       },
       {
         "command": "wpfXamlViewer.cleanProject",
-        "title": "WPF XAML: 프로젝트 정리"
+        "title": "%command.cleanProject.title%"
       },
       {
         "command": "wpfXamlViewer.restoreProject",
-        "title": "WPF XAML: 프로젝트 복원"
+        "title": "%command.restoreProject.title%"
       },
       {
         "command": "wpfXamlViewer.buildProjectDebug",
-        "title": "WPF XAML: 빌드 - Debug"
+        "title": "%command.buildProjectDebug.title%"
       },
       {
         "command": "wpfXamlViewer.buildProjectRelease",
-        "title": "WPF XAML: 빌드 - Release"
+        "title": "%command.buildProjectRelease.title%"
       },
       {
         "command": "wpfXamlViewer.rebuildProjectDebug",
-        "title": "WPF XAML: 다시 빌드 - Debug"
+        "title": "%command.rebuildProjectDebug.title%"
       },
       {
         "command": "wpfXamlViewer.rebuildProjectRelease",
-        "title": "WPF XAML: 다시 빌드 - Release"
+        "title": "%command.rebuildProjectRelease.title%"
       },
       {
         "command": "wpfXamlViewer.cleanProjectDebug",
-        "title": "WPF XAML: 정리 - Debug"
+        "title": "%command.cleanProjectDebug.title%"
       },
       {
         "command": "wpfXamlViewer.cleanProjectRelease",
-        "title": "WPF XAML: 정리 - Release"
+        "title": "%command.cleanProjectRelease.title%"
       },
       {
         "command": "wpfXamlViewer.buildXamlProject",
-        "title": "WPF XAML: 이 XAML의 프로젝트 빌드"
+        "title": "%command.buildXamlProject.title%"
+      },
+      {
+        "command": "wpfXamlViewer.switchLanguage",
+        "title": "%command.switchLanguage.title%"
       }
     ],
     "configuration": {
@@ -100,7 +104,12 @@
         "wpfXamlViewer.autoOpenPreview": {
           "type": "boolean",
           "default": true,
-          "description": ".xaml 파일을 열면 미리보기를 자동으로 연다. 이미 열린 미리보기가 있으면 재사용해 갱신한다."
+          "description": "%config.autoOpenPreview.description%"
+        },
+        "wpfXamlViewer.autoBuildOnPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.autoBuildOnPreview.description%"
         },
         "wpfXamlViewer.buildConfiguration": {
           "type": "string",
@@ -109,12 +118,12 @@
             "Release"
           ],
           "default": "Debug",
-          "description": ".csproj/.sln 우클릭 빌드/다시 빌드/정리에 쓰는 구성(dotnet -c)."
+          "description": "%config.buildConfiguration.description%"
         },
         "wpfXamlViewer.buildTargetFramework": {
           "type": "string",
           "default": "",
-          "description": "다중 대상(<TargetFrameworks>) .csproj를 우클릭 빌드할 때 이 TFM만 빌드한다(예: net10.0-windows). 그 .csproj가 해당 TFM을 선언한 경우에만 적용되고, 솔루션/단일 대상 프로젝트에는 쓰지 않는다. 비우면 모두 빌드."
+          "description": "%config.buildTargetFramework.description%"
         },
         "wpfXamlViewer.buildExtraArgs": {
           "type": "array",
@@ -122,7 +131,22 @@
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "우클릭 빌드/정리/복원의 `dotnet` 인자 끝에 그대로 덧붙인다(예: `[\"-p:RunAnalyzers=false\"]`). 신뢰하지 않은 폴더에서는 읽지 않는다."
+          "markdownDescription": "%config.buildExtraArgs.description%"
+        },
+        "wpfXamlViewer.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "ko",
+            "en"
+          ],
+          "default": "auto",
+          "enumDescriptions": [
+            "%config.language.enum.auto%",
+            "%config.language.enum.ko%",
+            "%config.language.enum.en%"
+          ],
+          "description": "%config.language.description%"
         }
       }
     },
@@ -254,7 +278,7 @@
           },
           "target": {
             "type": "string",
-            "description": ".csproj/.sln 경로"
+            "description": "%task.target.description%"
           }
         }
       }
@@ -262,7 +286,7 @@
     "submenus": [
       {
         "id": "wpfXamlViewer.configMenu",
-        "label": "WPF XAML: 구성 선택 빌드"
+        "label": "%submenu.configMenu.label%"
       }
     ]
   },

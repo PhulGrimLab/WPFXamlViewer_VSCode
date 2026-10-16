@@ -129,6 +129,7 @@ try {
 
     Write-Step "스테이징 복사"
     Copy-Item (Join-Path $ExtensionDir "package.json") $Stage
+    Copy-Item (Join-Path $ExtensionDir "package.nls*.json") $Stage # 메뉴/설정 문구 번역(영어 기본 + 한국어)
     Copy-Item (Join-Path $ExtensionDir ".vscodeignore") $Stage
     Copy-Item (Join-Path $ExtensionDir "README.md") $Stage
     Copy-Item (Join-Path $ExtensionDir "CHANGELOG.md") $Stage

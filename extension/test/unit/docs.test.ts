@@ -1,6 +1,7 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { loadManifest } from '../support/nls';
 
 /**
  * X-P01: 사용자 가이드(doc/User_Guide.md)의 명령/설정 이름이 package.json과 일치하는지 검사한다.
@@ -8,9 +9,10 @@ import * as path from 'path';
  */
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
 const guide = fs.readFileSync(path.join(REPO_ROOT, 'doc', 'User_Guide.md'), 'utf8');
-const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../package.json'), 'utf8')) as {
+// 가이드는 한국어라 한국어 문구로 푼 매니페스트와 비교한다.
+const manifest = loadManifest<{
     contributes: { commands: { command: string; title: string }[]; configuration?: { properties?: Record<string, unknown> } };
-};
+}>('ko');
 
 describe('User_Guide ↔ package.json (X-P01)', () => {
     it('package.json의 모든 명령 ID와 제목이 가이드에 있다', () => {

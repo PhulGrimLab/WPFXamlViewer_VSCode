@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { HitElement } from './hitTest';
 import { DEFAULT_REQUEST_TIMEOUT_MS, SHUTDOWN_GRACE_MS, SHUTDOWN_REQUEST_ID } from './constants';
@@ -21,7 +22,7 @@ export interface HostClientOptions {
 
 /** 호스트가 `ok:false`로 보고한 오류(렌더 실패 등). 줄/열은 1-base, 없으면 undefined. */
 export class HostRequestError extends Error {
-    constructor(public readonly code: string, message: string, public readonly line?: number, public readonly col?: number) {
+    constructor(public readonly code: string, message: string, public readonly line?: number, public readonly col?: number, public readonly projectReason?: string) {
         super(message);
         this.name = 'HostRequestError';
     }
@@ -30,7 +31,7 @@ export class HostRequestError extends Error {
 /** 요청이 제한 시간 안에 응답하지 않아 호스트를 kill했다. */
 export class HostTimeoutError extends Error {
     constructor(public readonly requestId: number, public readonly elapsedMs: number) {
-        super(`호스트가 ${elapsedMs}ms 안에 응답하지 않았습니다 (request ${requestId}).`);
+        super(t('host.timeout', elapsedMs, requestId));
         this.name = 'HostTimeoutError';
     }
 }
@@ -38,7 +39,7 @@ export class HostTimeoutError extends Error {
 /** 처리 중에 호스트 프로세스가 비정상 종료했다. */
 export class HostCrashedError extends Error {
     constructor(public readonly exitCode: number | null, public readonly signal: string | null, public readonly stderrTail: string) {
-        super(`호스트가 비정상 종료했습니다 (exit=${exitCode}, signal=${signal}).${stderrTail ? ' ' + stderrTail : ''}`);
+        super(`${t('host.crashed', String(exitCode), String(signal))}${stderrTail ? ' ' + stderrTail : ''}`);
         this.name = 'HostCrashedError';
     }
 }
@@ -46,7 +47,7 @@ export class HostCrashedError extends Error {
 /** 호스트 프로세스를 시작하지 못했다(실행 파일 없음 등). */
 export class HostSpawnError extends Error {
     constructor(message: string) {
-        super(`호스트를 시작할 수 없습니다: ${message}`);
+        super(t('host.spawn', message));
         this.name = 'HostSpawnError';
     }
 }
@@ -54,7 +55,7 @@ export class HostSpawnError extends Error {
 /** dispose 이후에 요청했거나 처리 중이던 요청이 dispose로 취소됐다. */
 export class HostDisposedError extends Error {
     constructor() {
-        super('HostClient가 종료되었습니다.');
+        super(t('host.disposed'));
         this.name = 'HostDisposedError';
     }
 }
@@ -72,6 +73,8 @@ export interface RenderParams {
     width?: number;
     height?: number;
     dpi?: number;
+    /** 호스트가 만드는 경고/오류 문구의 언어(`ko`/`en`). 생략하면 한국어. */
+    lang?: string;
 }
 
 /** 렌더는 성공했지만 사용자가 알아야 하는 변경/제한(제거한 x:Class, 자리표시자 등). 줄/열은 1-base, 없을 수 있다. */
@@ -346,7 +349,7 @@ export class HostClient {
 
     /** 응답 한 줄을 해석해 대응하는 요청을 완료시킨다. 형식이 틀리거나 알 수 없는 id면 로그만 남기고 무시한다. */
     private _onLine(line: string): void {
-        let message: { id?: unknown; ok?: unknown; result?: unknown; error?: { code?: string; message?: string; line?: number; col?: number } };
+        let message: { id?: unknown; ok?: unknown; result?: unknown; error?: { code?: string; message?: string; line?: number; col?: number; projectReason?: string } };
         try {
             message = JSON.parse(line);
         } catch {
@@ -373,7 +376,7 @@ export class HostClient {
             pending.resolve(message.result);
         } else {
             const e = message.error ?? {};
-            pending.reject(new HostRequestError(e.code ?? 'Unknown', e.message ?? '(메시지 없음)', e.line, e.col));
+            pending.reject(new HostRequestError(e.code ?? 'Unknown', e.message ?? t('host.noMessage'), e.line, e.col, e.projectReason));
         }
     }
 

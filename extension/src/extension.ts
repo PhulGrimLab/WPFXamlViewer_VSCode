@@ -1,3 +1,5 @@
+import { t } from './i18n';
+import { registerLanguage } from './language';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -71,13 +73,14 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         getHostPid: () => undefined,
         getLogLines: () => [...logLines],
     };
+    let onLanguageChanged: () => void = () => undefined;
+    registerLanguage(context, () => onLanguageChanged()); // 가장 먼저: 이후 문구가 선택한 언어로 나온다.
     registerProjectBuildCommands(context, log); // 호스트가 없어도 빌드 명령은 쓸 수 있다.
     const hostExe = resolveHostExe(context.extensionPath, fs.existsSync);
     if (!hostExe) {
         log('Error', LogId.HostCrashed, 'host exe not found');
         context.subscriptions.push(vscode.commands.registerCommand(COMMAND_OPEN_PREVIEW, () => {
-            void vscode.window.showErrorMessage(
-                'WPF XAML Live Preview: 렌더 호스트(XamlRenderHost.exe)를 찾을 수 없습니다. `dotnet build host/XamlRenderHost.slnx`로 빌드하거나 XAMLVIEWER_HOST_EXE를 설정하세요.');
+            void vscode.window.showErrorMessage(t('preview.noHost'));
         }));
         return api;
     } else {
@@ -87,7 +90,8 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
     const logDir = path.join(context.globalStorageUri.fsPath, HOST_LOG_DIR_NAME);
     fs.mkdirSync(logDir, { recursive: true });
     const client = new HostClient({ command: hostExe, args: ['serve', '--log-dir', logDir], log });
-    const controller = new PreviewController(client);
+    const controller = new PreviewController(client, log);
+    onLanguageChanged = () => controller.applyLanguage();
     context.subscriptions.push(
         controller,
         { dispose: () => { void client.dispose(); } },

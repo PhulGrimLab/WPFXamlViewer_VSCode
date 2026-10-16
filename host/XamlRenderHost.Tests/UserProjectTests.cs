@@ -67,6 +67,29 @@ public class UserProjectTests
         StringAssert.Contains(tier0.Message, "dotnet build");
     }
 
+    /// <summary>외부 라이브러리의 XML 네임스페이스(XmlnsDefinition)로만 쓰는 형식이라 빌드 산출물이 없으면 파싱 자체가 실패하는 XAML.</summary>
+    private static string LibraryXaml => $"<StackPanel {Ns} xmlns:u=\"http://example.com/library/2022/xaml\"><u:Widget/></StackPanel>";
+
+    [TestMethod]
+    public void T03b_NoBuildArtifact_ParseFailureCarriesProjectReason()
+    {
+        using var project = UserProjectFixture.Create(withBuild: false);
+        File.WriteAllText(project.XamlPath, LibraryXaml);
+        var ex = Assert.Throws<XamlRenderException>(() => StaRunner.Run(() =>
+            XamlRenderer.Render(new RenderRequest(LibraryXaml, FilePath: project.XamlPath, AllowProjectAssemblies: true))));
+        Assert.AreEqual(ProjectLookupReasons.NoArtifact, ex.ProjectReason, "산출물이 없으면 확장이 먼저 빌드하도록 이유를 알려야 한다");
+    }
+
+    [TestMethod]
+    public void T03c_BuiltProject_ParseFailureHasNoProjectReason()
+    {
+        using var project = UserProjectFixture.Create();
+        File.WriteAllText(project.XamlPath, LibraryXaml);
+        var ex = Assert.Throws<XamlRenderException>(() => StaRunner.Run(() =>
+            XamlRenderer.Render(new RenderRequest(LibraryXaml, FilePath: project.XamlPath, AllowProjectAssemblies: true))));
+        Assert.IsNull(ex.ProjectReason, "산출물이 있는데 실패한 것은 빌드 문제가 아니다");
+    }
+
     [TestMethod]
     public void T04_DesignMode_IsEnabledForUserCode()
     {

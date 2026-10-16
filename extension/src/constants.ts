@@ -38,6 +38,12 @@ export const CONFIG_AUTO_OPEN = 'autoOpenPreview';
 /** 빌드 명령이 읽는 설정: `dotnet build -c` 구성(Debug/Release). */
 export const CONFIG_BUILD_CONFIGURATION = 'buildConfiguration';
 
+/** 미리보기가 프로젝트 빌드 산출물(bin)이 없어 실패하면 그 프로젝트를 자동으로 빌드할지 여부. */
+export const CONFIG_AUTO_BUILD = 'autoBuildOnPreview';
+
+/** 표시 언어 설정: auto(VS Code 표시 언어를 따름) / ko / en. */
+export const CONFIG_LANGUAGE = 'language';
+
 /** 빌드/정리 Task의 type(package.json의 taskDefinitions와 같아야 한다). */
 export const TASK_TYPE_DOTNET = 'wpfXamlViewer.dotnet';
 

@@ -221,4 +221,15 @@ describe('실제 호스트 + HostClient', function () {
         // 확장 쪽 로그에도 시작 기록(E010)이 있다.
         assert.ok(c.logs.some((l) => l.id === 'E010'));
     });
+    it('I-13 render의 lang=en이면 호스트 경고/오류가 영어, 생략하면 한국어다', async () => {
+        const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xamlviewer-lang-'));
+        const { client } = newClient(logDir, false);
+        const unknown = `<StackPanel ${NS} xmlns:u="clr-namespace:Nope;assembly=Nope"><u:Widget/></StackPanel>`;
+        const english = await client.request<RenderResult>('render', { xaml: unknown, lang: 'en' });
+        assert.ok(english.warnings.some((w) => w.message.includes('placeholder')), JSON.stringify(english.warnings));
+        await assert.rejects(client.request('render', { xaml: ' ', lang: 'en' }), (e: Error) => e.message.includes('empty'));
+        const korean = await client.request<RenderResult>('render', { xaml: unknown });
+        assert.ok(korean.warnings.some((w) => w.message.includes('자리표시자')), JSON.stringify(korean.warnings));
+        await client.dispose();
+    });
 });

@@ -171,7 +171,7 @@ public static partial class XamlPreprocessor
         }
         catch (Exception ex) when (ex is IOException or XmlException or XamlRenderException or UnauthorizedAccessException)
         {
-            context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, $"{ApplicationFileName}를 읽을 수 없어 앱 리소스를 건너뜁니다: {ex.Message}", null, null));
+            context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, Loc.T($"{ApplicationFileName}를 읽을 수 없어 앱 리소스를 건너뜁니다: {ex.Message}", $"Could not read {ApplicationFileName}; skipping app resources: {ex.Message}"), null, null));
             return null;
         }
 

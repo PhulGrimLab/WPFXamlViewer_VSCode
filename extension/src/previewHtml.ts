@@ -1,3 +1,4 @@
+import { Language, StringKey, tIn } from './i18n';
 import { MAX_ZOOM, MIN_ZOOM } from './previewMessages';
 
 /** 줌 버튼 한 번의 배율 변화. */
@@ -12,9 +13,10 @@ const DRAG_THRESHOLD_PX = 3;
  * 요소 강조 사각형. 웹뷰 스크립트는 확장이 보낸 메시지를 화면에 반영하고, 상태가 바뀌면 viewState/imageShown으로 회신한다(doc/03 1.1).
  * CSP 때문에 인라인 style 속성은 쓰지 않고(CSSOM으로만 크기 지정) 클래스로 배경을 바꾼다.
  */
-export function buildPreviewHtml(nonce: string, cspSource: string): string {
+export function buildPreviewHtml(nonce: string, cspSource: string, language: Language = 'ko'): string {
+    const L = (key: StringKey): string => escapeHtml(tIn(language, key));
     return `<!DOCTYPE html>
-<html lang="ko">
+<html lang="${language}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${cspSource}; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
@@ -41,22 +43,22 @@ export function buildPreviewHtml(nonce: string, cspSource: string): string {
 </head>
 <body>
 <div id="toolbar">
-  <button id="zoomOut" title="축소">−</button>
+  <button id="zoomOut" title="${L('web.zoomOut')}">−</button>
   <span id="zoomLabel">100%</span>
-  <button id="zoomIn" title="확대">+</button>
-  <button id="zoomFit" title="창에 맞춤">맞춤</button>
-  <button id="zoom100" title="실제 크기">100%</button>
-  <select id="background" title="배경">
-    <option value="checker">체크무늬</option>
-    <option value="white">흰색</option>
-    <option value="dark">어둡게</option>
+  <button id="zoomIn" title="${L('web.zoomIn')}">+</button>
+  <button id="zoomFit" title="${L('web.fit')}">${L('web.fitLabel')}</button>
+  <button id="zoom100" title="${L('web.actual')}">100%</button>
+  <select id="background" title="${L('web.background')}">
+    <option value="checker">${L('web.checker')}</option>
+    <option value="white">${L('web.white')}</option>
+    <option value="dark">${L('web.dark')}</option>
   </select>
-  <label>W <input id="sizeW" inputmode="numeric" placeholder="자동"></label>
-  <label>H <input id="sizeH" inputmode="numeric" placeholder="자동"></label>
-  <button id="applySize" title="지정한 크기로 다시 렌더">적용</button>
-  <button id="autoSize" title="크기 지정 해제">자동</button>
+  <label>W <input id="sizeW" inputmode="numeric" placeholder="${L('web.auto')}"></label>
+  <label>H <input id="sizeH" inputmode="numeric" placeholder="${L('web.auto')}"></label>
+  <button id="applySize" title="${L('web.applyTitle')}">${L('web.apply')}</button>
+  <button id="autoSize" title="${L('web.autoTitle')}">${L('web.auto')}</button>
 </div>
-<div id="status">XAML 문서를 열어 주세요.</div>
+<div id="status">${L('web.openDoc')}</div>
 <div id="viewport" class="bg-checker"><div id="stage"><img id="image" alt="XAML preview"><div id="highlight"></div></div></div>
 <script nonce="${nonce}">
   const MIN_ZOOM = ${MIN_ZOOM}, MAX_ZOOM = ${MAX_ZOOM}, ZOOM_STEP = ${ZOOM_STEP}, DRAG_THRESHOLD = ${DRAG_THRESHOLD_PX};
@@ -125,7 +127,7 @@ export function buildPreviewHtml(nonce: string, cspSource: string): string {
     } else if (m.type === 'error') {
       status.className = 'error'; status.textContent = m.message;
     } else if (m.type === 'busy') {
-      status.className = ''; status.textContent = '렌더 중...';
+      status.className = ''; status.textContent = ${JSON.stringify(tIn(language, 'web.busy'))};
     } else if (m.type === 'highlight') {
       highlightRect = m.rect; layout();
     } else if (m.type === 'setView') {
@@ -183,4 +185,9 @@ export function buildPreviewHtml(nonce: string, cspSource: string): string {
 </script>
 </body>
 </html>`;
+}
+
+/** HTML 속성/본문에 넣을 문구의 특수문자를 이스케이프한다. */
+function escapeHtml(text: string): string {
+    return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

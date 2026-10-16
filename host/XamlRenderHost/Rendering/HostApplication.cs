@@ -161,7 +161,7 @@ public static class HostApplication
         {
             var application = Application.Current ?? new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             var parsed = ParseSkippingFailingElements(resourcesXml, schema) as ResourceDictionary
-                ?? throw new InvalidOperationException("App.xaml 리소스가 ResourceDictionary가 아닙니다.");
+                ?? throw new InvalidOperationException(Loc.T("App.xaml 리소스가 ResourceDictionary가 아닙니다.", "The App.xaml resources are not a ResourceDictionary."));
             application.Resources = parsed;
             _appliedKey = key;
             return RunLibraryBootstraps();

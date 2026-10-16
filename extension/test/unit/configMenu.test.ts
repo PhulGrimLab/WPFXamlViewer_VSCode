@@ -2,18 +2,19 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CONFIGURED_COMMANDS, buildDotnetArgs } from '../../src/dotnetCommands';
+import { loadManifest } from '../support/nls';
 
 /**
  * X-C: 우클릭 "구성 선택 빌드" 서브메뉴(Debug/Release)의 명령 표와 package.json이 어긋나지 않는지 검사한다.
  */
 interface MenuItem { command?: string; submenu?: string; when?: string; group?: string }
-const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../package.json'), 'utf8')) as {
+const manifest = loadManifest<{
     contributes: {
         commands: { command: string; title: string }[];
         submenus: { id: string; label: string }[];
         menus: Record<string, MenuItem[]>;
     };
-};
+}>('ko');
 const SUBMENU_ID = 'wpfXamlViewer.configMenu';
 
 describe('구성 선택 빌드 메뉴 (X-M)', () => {

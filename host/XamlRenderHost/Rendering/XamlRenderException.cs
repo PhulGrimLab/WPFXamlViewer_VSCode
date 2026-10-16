@@ -40,6 +40,9 @@ public sealed class XamlRenderException : Exception
     /// <summary>오류가 난 열(1-base). 위치를 알 수 없으면 null.</summary>
     public int? Column { get; }
 
+    /// <summary>실패 시점의 프로젝트 탐색 이유(예: `NoArtifact` = 빌드 산출물 없음). 확장이 "먼저 빌드" 안내/자동 빌드에 쓴다. 모르면 null.</summary>
+    public string? ProjectReason { get; set; }
+
     public XamlRenderException(string code, string message, int? line = null, int? column = null, Exception? inner = null)
         : base(message, inner)
     {

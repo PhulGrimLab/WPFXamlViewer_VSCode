@@ -213,7 +213,7 @@ public static partial class XamlPreprocessor
                 {
                     var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
                     edits.Add(new Edit(elementStart, end, BlankPreservingNewlines(xaml, elementStart, end)));
-                    warnings.Add(new RenderWarning(WarningCodes.RemovedCodeBlock, "x:Code 블록을 제거했습니다.", lineInfo.LineNumber, lineInfo.LinePosition - 1));
+                    warnings.Add(new RenderWarning(WarningCodes.RemovedCodeBlock, Loc.T("x:Code 블록을 제거했습니다.", "Removed the x:Code block."), lineInfo.LineNumber, lineInfo.LinePosition - 1));
                 }
                 else if (IsApplicationPackSetter(reader))
                 {
@@ -221,7 +221,7 @@ public static partial class XamlPreprocessor
                     // 시각 결과에 영향이 거의 없으므로 Setter 전체를 줄바꿈만 남기고 지운다.
                     var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
                     edits.Add(new Edit(elementStart, end, BlankPreservingNewlines(xaml, elementStart, end)));
-                    warnings.Add(new RenderWarning(WarningCodes.RemovedApplicationResource, $"앱 리소스(pack://application) 값을 쓰는 Setter({reader.GetAttribute("Property")})를 제거했습니다.", lineInfo.LineNumber, lineInfo.LinePosition - 1));
+                    warnings.Add(new RenderWarning(WarningCodes.RemovedApplicationResource, Loc.T($"앱 리소스(pack://application) 값을 쓰는 Setter({reader.GetAttribute("Property")})를 제거했습니다.", $"Removed a Setter ({reader.GetAttribute("Property")}) that uses an app resource (pack://application) value."), lineInfo.LineNumber, lineInfo.LinePosition - 1));
                 }
                 else if (TypedDefinitionStandIn(reader, context, parentName) is { } standIn)
                 {
@@ -230,7 +230,7 @@ public static partial class XamlPreprocessor
                     var definitionName = reader.LocalName;
                     var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
                     edits.Add(new Edit(elementStart, end, standIn + NewlinesIn(xaml, elementStart, end)));
-                    warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, $"해석할 수 없는 타입을 대상으로 하는 {definitionName}을(를) 건너뜁니다.", line, col));
+                    warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, Loc.T($"해석할 수 없는 타입을 대상으로 하는 {definitionName}을(를) 건너뜁니다.", $"Skipped a {definitionName} that targets a type that cannot be resolved."), line, col));
                 }
                 else if (IsDictionaryWithSource(reader) && TryKeepLibraryDictionary(reader.GetAttribute("Source")!, filePath, context))
                 {
@@ -261,7 +261,7 @@ public static partial class XamlPreprocessor
                         // 태그하지 않음.
                     }
                     edits.Add(new Edit(elementStart, end, placeholder + NewlinesIn(xaml, elementStart, end)));
-                    warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, $"{typeName} 타입을 해석할 수 없어 자리표시자로 표시합니다.", line, col));
+                    warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, Loc.T($"{typeName} 타입을 해석할 수 없어 자리표시자로 표시합니다.", $"Cannot resolve the type {typeName}; showing a placeholder."), line, col));
                 }
                 else
                 {
@@ -608,7 +608,7 @@ public static partial class XamlPreprocessor
                 if (replacedAttribute != null)
                 {
                     edits.Add(new Edit(attributeStart, attributeEnd, replacedAttribute));
-                    context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, $"{reader.Name} 속성의 해석할 수 없는 타입 참조를 {StandInStyleTarget}로 대체했습니다.", lineInfo.LineNumber, lineInfo.LinePosition));
+                    context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, Loc.T($"{reader.Name} 속성의 해석할 수 없는 타입 참조를 {StandInStyleTarget}로 대체했습니다.", $"Replaced an unresolvable type reference in the {reader.Name} attribute with {StandInStyleTarget}."), lineInfo.LineNumber, lineInfo.LinePosition));
                 }
                 else
                 {
@@ -625,7 +625,7 @@ public static partial class XamlPreprocessor
                 var start = ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition);
                 var end = FindAttributeEnd(xaml, start);
                 edits.Add(new Edit(start, end, BlankPreservingNewlines(xaml, start, end)));
-                context.Warnings.Add(new RenderWarning(code, $"{reader.Name} 속성을 제거했습니다.", lineInfo.LineNumber, lineInfo.LinePosition));
+                context.Warnings.Add(new RenderWarning(code, Loc.T($"{reader.Name} 속성을 제거했습니다.", $"Removed the {reader.Name} attribute."), lineInfo.LineNumber, lineInfo.LinePosition));
             }
             else
             {
@@ -875,12 +875,12 @@ public static partial class XamlPreprocessor
         var resolved = ResolveDictionaryPath(source, filePath);
         if (resolved == null)
         {
-            context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, $"병합 사전을 찾을 수 없습니다: {source}", line, col));
+            context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, Loc.T($"병합 사전을 찾을 수 없습니다: {source}", $"Merged dictionary not found: {source}"), line, col));
             return emptyDictionary;
         }
         else if (depth >= MaxDictionaryDepth || !context.VisitedDictionaries.Add(resolved))
         {
-            context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, $"병합 사전이 순환하거나 너무 깊습니다: {source}", line, col));
+            context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, Loc.T($"병합 사전이 순환하거나 너무 깊습니다: {source}", $"Merged dictionary is circular or too deep: {source}"), line, col));
             return emptyDictionary;
         }
         else
@@ -897,7 +897,7 @@ public static partial class XamlPreprocessor
         }
         catch (IOException ex)
         {
-            context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, $"병합 사전을 읽을 수 없습니다: {source} ({ex.Message})", line, col));
+            context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, Loc.T($"병합 사전을 읽을 수 없습니다: {source} ({ex.Message})", $"Cannot read merged dictionary: {source} ({ex.Message})"), line, col));
             return emptyDictionary;
         }
         finally

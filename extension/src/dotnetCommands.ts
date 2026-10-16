@@ -1,3 +1,4 @@
+import { t } from './i18n';
 import * as path from 'path';
 
 /**
@@ -20,12 +21,9 @@ export const MAX_PROJECT_SEARCH_LEVELS = 12;
 const BUILDABLE_EXTENSIONS = new Set(['.csproj', '.sln', '.slnx', '.slnf']);
 
 /** 동작별 사용자 표시 이름(Task 이름/알림에 쓴다). */
-export const ACTION_LABELS: Record<DotnetAction, string> = {
-    build: '빌드',
-    rebuild: '다시 빌드',
-    clean: '정리',
-    restore: '복원',
-};
+export function actionLabel(action: DotnetAction): string {
+    return t(`action.${action}`);
+}
 
 /** 구성(Debug/Release)을 직접 고르는 우클릭 명령. 설정 `buildConfiguration`을 무시하고 이 구성으로 실행한다(package.json의 명령 ID와 같아야 한다). */
 export const CONFIGURED_COMMANDS: readonly { command: string; action: DotnetAction; configuration: (typeof BUILD_CONFIGURATIONS)[number] }[] = [

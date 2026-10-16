@@ -93,11 +93,11 @@ public static class ProjectTier
     /// <summary>Tier 0일 때 사용자에게 보여 줄 이유 문장(자리표시자가 생긴 경우의 경고 메시지).</summary>
     public static string DescribeTier0(ProjectTierInfo info) => info.Reason switch
     {
-        ProjectTierReasons.Untrusted => "신뢰되지 않은 폴더라 프로젝트 DLL을 불러오지 않았습니다. 폴더를 신뢰하면 사용자 컨트롤이 실제로 그려집니다.",
-        ProjectTierReasons.NoFilePath => "저장되지 않은 문서라 프로젝트를 찾을 수 없습니다.",
-        ProjectLookupReasons.NoProject => "가까운 .csproj를 찾지 못해 사용자 컨트롤을 자리표시자로 표시합니다.",
-        ProjectLookupReasons.NoArtifact => "빌드 산출물(bin)이 없습니다. 먼저 `dotnet build` 하세요.",
-        ProjectTierReasons.LoadFailed => $"프로젝트 DLL을 불러오지 못했습니다: {info.Detail}",
+        ProjectTierReasons.Untrusted => Loc.T("신뢰되지 않은 폴더라 프로젝트 DLL을 불러오지 않았습니다. 폴더를 신뢰하면 사용자 컨트롤이 실제로 그려집니다.", "The folder is not trusted, so the project DLL was not loaded. Trust the folder to render user controls for real."),
+        ProjectTierReasons.NoFilePath => Loc.T("저장되지 않은 문서라 프로젝트를 찾을 수 없습니다.", "The document is unsaved, so its project cannot be found."),
+        ProjectLookupReasons.NoProject => Loc.T("가까운 .csproj를 찾지 못해 사용자 컨트롤을 자리표시자로 표시합니다.", "No nearby .csproj was found, so user controls are shown as placeholders."),
+        ProjectLookupReasons.NoArtifact => Loc.T("빌드 산출물(bin)이 없습니다. 먼저 `dotnet build` 하세요.", "There is no build output (bin). Run `dotnet build` first."),
+        ProjectTierReasons.LoadFailed => Loc.T($"프로젝트 DLL을 불러오지 못했습니다: {info.Detail}", $"Could not load the project DLL: {info.Detail}"),
         _ => info.Reason,
     };
 }

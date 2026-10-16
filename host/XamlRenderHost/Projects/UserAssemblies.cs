@@ -238,7 +238,7 @@ public sealed class UserAssemblies
                 info = new FileInfo(artifact.AssemblyPath);
                 if (!info.Exists)
                 {
-                    return new UserAssemblyLoad(null, false, 0, "산출물 파일이 없습니다.");
+                    return new UserAssemblyLoad(null, false, 0, Loc.T("산출물 파일이 없습니다.", "The build output file does not exist."));
                 }
                 else
                 {

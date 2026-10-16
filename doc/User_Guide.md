@@ -32,6 +32,7 @@
 |---|---|---|
 | `wpfXamlViewer.openPreview` | WPF XAML: Open Preview | 활성 `.xaml` 파일을 에디터 옆 패널에 미리보기한다. `.xaml`이 아니면 안내만 한다. |
 | `wpfXamlViewer.buildProject` | WPF XAML: 프로젝트 빌드 | 탐색기에서 `.csproj`/`.sln`/`.slnx`를 **우클릭 → 프로젝트 빌드**. 그 프로젝트만 `dotnet build`를 실행한다(아래 "프로젝트 빌드/정리"). |
+| `wpfXamlViewer.switchLanguage` | WPF XAML: 언어 전환 (한국어 / English) | 확장의 표시 언어를 **자동 / 한국어 / English** 중에서 고른다(설정 `wpfXamlViewer.language`에 저장). 상태 표시줄, 알림, 미리보기 도구 모음, 호스트 경고 문구가 바로 바뀐다. |
 | `wpfXamlViewer.rebuildProject` | WPF XAML: 프로젝트 다시 빌드 | `.csproj` 우클릭. `dotnet build --no-incremental`. |
 | `wpfXamlViewer.cleanProject` | WPF XAML: 프로젝트 정리 | `.csproj`/`.sln` 우클릭. `dotnet clean`. |
 | `wpfXamlViewer.restoreProject` | WPF XAML: 프로젝트 복원 | `.csproj` 우클릭. `dotnet restore`. |
@@ -47,7 +48,9 @@
 
 | 설정 | 기본값 | 설명 |
 |---|---|---|
+| `wpfXamlViewer.language` | `auto` | 메시지, 상태 표시줄, 미리보기 도구 모음, 호스트 경고의 언어(`auto`/`ko`/`en`). `auto`는 VS Code 표시 언어를 따르고(VS Code는 기본적으로 Windows 언어를 쓴다) 한국어가 아니면 영어로 표시한다. 메뉴/명령 제목은 VS Code 표시 언어(**Configure Display Language**)를 따른다. 로그는 번역하지 않는다. |
 | `wpfXamlViewer.autoOpenPreview` | `true` | `.xaml` 파일을 열면 미리보기를 자동으로 연다. |
+| `wpfXamlViewer.autoBuildOnPreview` | `true` | 프로젝트 빌드 산출물(`bin`)이 없어 미리보기가 실패하면 그 프로젝트를 자동으로 빌드하고 다시 그린다. 빌드에 실패하면 "이 XAML을 미리 보려면 프로젝트가 먼저 빌드되어야 하는데 실패했다"고 표시한다. 신뢰된 폴더에서만 동작한다. |
 | `wpfXamlViewer.buildConfiguration` | `Debug` | 프로젝트 빌드/다시 빌드/정리에 쓰는 구성(`Debug`/`Release`). |
 | `wpfXamlViewer.buildTargetFramework` | (빈 값) | 다중 대상(`<TargetFrameworks>`) `.csproj`를 우클릭 빌드할 때 이 TFM만 빌드한다(예: `net10.0-windows`). 그 `.csproj`가 해당 TFM을 **선언한 경우에만** `-f`로 적용하고, 솔루션/단일 대상 프로젝트에는 쓰지 않는다(없는 TFM은 빌드 오류라서). `Directory.Build.props`에서 TFM을 선언하는 프로젝트에는 적용되지 않는다. |
 | `wpfXamlViewer.buildExtraArgs` | `[]` | `dotnet` 인자 끝에 그대로 덧붙인다(예: `["-p:RunAnalyzers=false"]`). 최대 20개, 각 200자. 신뢰하지 않은 폴더에서는 읽지 않는다. |
