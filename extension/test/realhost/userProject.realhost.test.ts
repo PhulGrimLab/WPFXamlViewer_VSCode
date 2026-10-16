@@ -122,4 +122,21 @@ describe('M4B 실제 호스트 + 사용자 프로젝트', function () {
         const ids = logs.map((l) => l.id).filter((id) => id === 'E010' || id === 'E011');
         assert.deepStrictEqual(ids, ['E010', 'E011', 'E010']);
     });
+    it('B.7 프로젝트가 다시 빌드되면 renderLatest가 호스트를 새로 띄워(HostRecycled) 자동으로 다시 그린다', async () => {
+        const project = createUserProject(root, 'Rebuilt', userXaml('<s:RedBox/>'));
+        const c = newClient();
+        const first = await c.renderLatest({ xaml: userXaml('<s:RedBox/>'), filePath: project.xamlPath, allowProjectAssemblies: true });
+        assert.ok(!first.discarded);
+        const firstPid = c.pid;
+
+        // 다시 빌드한 상황: 산출물의 수정 시각이 바뀐다.
+        const dll = path.join(project.dir, 'bin', 'Debug', 'net10.0-windows', 'SampleControls.dll');
+        const later = new Date(Date.now() + 60_000);
+        fs.utimesSync(dll, later, later);
+
+        const second = await c.renderLatest({ xaml: userXaml('<s:RedBox/>'), filePath: project.xamlPath, allowProjectAssemblies: true });
+        assert.ok(!second.discarded && second.result.width === 40, '재시작 뒤에도 사용자 컨트롤이 그려져야 한다');
+        assert.notStrictEqual(c.pid, firstPid, '호스트 프로세스가 새로 떠야 한다');
+        assert.ok(logs.some((l) => l.id === 'E014' || l.message.includes('restarting host')), JSON.stringify(logs.map((l) => l.id)));
+    });
 });

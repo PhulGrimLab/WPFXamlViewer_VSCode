@@ -91,7 +91,7 @@ function isFiniteNumber(value: unknown): value is number {
 function parseSize(value: unknown): number | null | undefined {
     if (value === null) {
         return null;
-    } else if (isFiniteNumber(value) && value >= 1 && value <= MAX_RENDER_SIZE) {
+    } else if (isFiniteNumber(value) && Number.isInteger(value) && value >= 1 && value <= MAX_RENDER_SIZE) {
         return value;
     } else {
         return undefined;

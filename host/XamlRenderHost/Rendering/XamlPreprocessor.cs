@@ -900,6 +900,14 @@ public static partial class XamlPreprocessor
             context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, Loc.T($"병합 사전을 읽을 수 없습니다: {source} ({ex.Message})", $"Cannot read merged dictionary: {source} ({ex.Message})"), line, col));
             return emptyDictionary;
         }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or XamlRenderException)
+        {
+            // 권한이 없거나 XML이 아닌/깨진 병합 파일: 주 문서의 오류로 보고하면 줄 번호가 병합 파일 기준이라 오해를 부르고, 메시지에 그 파일의 내용 조각이 실릴 수 있다.
+            // 파일 이름만 담은 경고로 바꾸고 그 사전은 건너뛴다.
+            var fileName = Path.GetFileName(resolved);
+            context.Warnings.Add(new RenderWarning(WarningCodes.DictionaryUnavailable, Loc.T($"병합 사전을 해석할 수 없어 건너뜁니다: {fileName}", $"Skipped a merged dictionary that cannot be parsed: {fileName}"), line, col));
+            return emptyDictionary;
+        }
         finally
         {
             // 같은 사전을 형제 위치에서 다시 병합하는 것은 순환이 아니므로 경로 위의 방문만 막는다.
@@ -1016,7 +1024,8 @@ public static partial class XamlPreprocessor
         var starts = new List<int> { 0 };
         for (var i = 0; i < text.Length; i++)
         {
-            if (text[i] == '\n')
+            // XmlReader는 \r\n 한 쌍, 단독 \r, 단독 \n을 모두 줄바꿈 하나로 센다. 단독 \r만 쓰는 문서에서 줄 번호가 어긋나지 않게 같은 규칙으로 센다.
+            if (text[i] == '\n' || (text[i] == '\r' && (i + 1 >= text.Length || text[i + 1] != '\n')))
             {
                 starts.Add(i + 1);
             }
@@ -1028,7 +1037,7 @@ public static partial class XamlPreprocessor
         return starts;
     }
 
-    private static int ToOffset(List<int> lineStarts, int line, int column) => lineStarts[line - 1] + column - 1;
+    private static int ToOffset(List<int> lineStarts, int line, int column) => lineStarts[Math.Clamp(line - 1, 0, lineStarts.Count - 1)] + column - 1;
 
     /// <summary>현재 속성의 이름 시작 오프셋에서 닫는 따옴표 다음까지의 끝 오프셋(배타)을 찾는다.</summary>
     private static int FindAttributeEnd(string xaml, int nameStart)

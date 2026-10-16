@@ -24,7 +24,7 @@ public static class ProjectTier
     /// 신뢰(allow)가 있고 파일 경로로 산출물을 찾아 로드에 성공하면 Tier 1, 아니면 Tier 0과 그 이유.
     /// 신뢰 판단은 호출자(확장: Workspace Trust)가 하고 호스트는 그 결과만 따른다 — 신뢰 없이는 사용자 코드를 절대 로드하지 않는다.
     /// </summary>
-    public static ProjectTierInfo Resolve(bool allowProjectAssemblies, string? filePath)
+    public static ProjectTierInfo Resolve(bool allowProjectAssemblies, string? filePath, bool allowHostRestart = false)
     {
         if (!allowProjectAssemblies)
         {
@@ -47,6 +47,17 @@ public static class ProjectTier
         else
         {
             // 산출물 있음: 로드.
+        }
+
+        if (allowHostRestart && UserAssemblies.Instance.NeedsReload(lookup.Artifact))
+        {
+            // 이미 불러 둔 이전 버전이 있다: 같은 프로세스에서 다시 불러오면 라이브러리의 의존 속성이 중복 등록되어 렌더가 깨진다. 호스트를 새로 띄우게 한다.
+            throw new XamlRenderException(RenderErrorCodes.HostRestartRequired,
+                Loc.T("프로젝트가 다시 빌드되어 호스트를 다시 시작합니다.", "The project was rebuilt; restarting the host."));
+        }
+        else
+        {
+            // 처음 로드이거나 같은 버전이거나 재시작을 허용하지 않는 호출자: 그대로 진행.
         }
 
         var load = UserAssemblies.Instance.Ensure(lookup.Artifact);

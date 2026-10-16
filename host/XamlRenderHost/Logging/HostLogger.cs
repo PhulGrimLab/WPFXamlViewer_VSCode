@@ -119,8 +119,15 @@ public sealed class HostLogger : IDisposable
     {
         foreach (var line in _queue!.GetConsumingEnumerable())
         {
-            _sink!.WriteLine(line);
-            ReportDroppedIfAny();
+            try
+            {
+                _sink!.WriteLine(line);
+                ReportDroppedIfAny();
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // 로그를 못 쓴다고 호스트가 죽으면 안 된다(처리되지 않은 예외는 프로세스를 종료시킨다). 이 줄은 버리고 계속한다.
+            }
         }
         ReportDroppedIfAny();
     }

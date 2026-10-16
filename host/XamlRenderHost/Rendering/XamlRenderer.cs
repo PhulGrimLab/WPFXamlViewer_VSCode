@@ -10,7 +10,7 @@ using System.Xml.Linq;
 namespace XamlRenderHost.Rendering;
 
 /// <summary>렌더 요청. AllowProjectAssemblies는 호출자(확장)가 Workspace Trust로 판단한 "프로젝트 DLL 로드 허용"이다(false면 사용자 코드를 실행하지 않는다). FilePath는 문서의 파일 경로로, 병합 사전의 상대 경로를 풀 때만 쓴다(없어도 렌더된다). Width/Height는 "요청 크기"(우선순위 3번)이며 루트의 명시 크기와 d:Design* 가 있으면 무시된다.</summary>
-public sealed record RenderRequest(string Xaml, double? Width = null, double? Height = null, double Dpi = XamlRenderer.DefaultDpi, string? FilePath = null, bool AllowProjectAssemblies = false);
+public sealed record RenderRequest(string Xaml, double? Width = null, double? Height = null, double Dpi = XamlRenderer.DefaultDpi, string? FilePath = null, bool AllowProjectAssemblies = false, bool AllowHostRestart = false);
 
 /// <summary>렌더 결과. Png는 투명 배경 PNG 바이트, 크기는 픽셀 단위.</summary>
 public sealed record RenderResult(byte[] Png, int PixelWidth, int PixelHeight, IReadOnlyList<RenderWarning>? Warnings = null, ProjectTierInfo? Project = null, IReadOnlyList<HitElement>? Elements = null);
@@ -90,7 +90,7 @@ public static class XamlRenderer
         // 그래서 렌더 전체를 하나의 잠금으로 직렬화한다(같은 스레드의 재진입은 허용).
         lock (RenderGate)
         {
-            var tier = ProjectTier.Resolve(request.AllowProjectAssemblies, request.FilePath);
+            var tier = ProjectTier.Resolve(request.AllowProjectAssemblies, request.FilePath, request.AllowHostRestart);
             var schema = ProjectTier.CreateSchemaContext(tier);
             // 보안: 신뢰된(Tier 1) 렌더 구간에서만 사용자 어셈블리의 이름 해석을 허용한다(Tier 0 렌더가 앞서 로드된 사용자 어셈블리를 이름으로 불러 쓰지 못하게).
             using var trustedResolution = tier.Tier == 1 ? Projects.UserAssemblies.BeginTrustedResolution() : null;
@@ -393,6 +393,8 @@ public static class XamlRenderer
     {
         if (schema == null)
         {
+            // 신뢰하지 않은 렌더: 선언만으로 코드가 실행되는 구성(ObjectDataProvider, x:FactoryMethod, 임의 타입 x:Static, 파일/네트워크 Source)을 파싱 전에 거부한다.
+            UntrustedXamlGuard.Validate(xaml);
             return XamlReader.Parse(xaml);
         }
         else

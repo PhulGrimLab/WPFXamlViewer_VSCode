@@ -143,6 +143,28 @@ public class UserProjectTests
     }
 
     [TestMethod]
+    public void T06b_DllReplaced_WithRestartAllowed_AsksForHostRestartInsteadOfReloading()
+    {
+        // 같은 프로세스에서 라이브러리(WPF UI 등)를 두 번 불러오면 의존 속성이 중복 등록되어 렌더가 깨진다. 재시작을 허용한 호출자에게는 다시 불러오지 않고 재시작을 요청한다.
+        using var project = UserProjectFixture.Create();
+        var xaml = Xaml("<s:RedBox/>");
+        File.WriteAllText(project.XamlPath, xaml);
+        RenderResult RenderAllowingRestart() => StaRunner.Run(() => XamlRenderer.Render(
+            new RenderRequest(xaml, FilePath: project.XamlPath, AllowProjectAssemblies: true, AllowHostRestart: true)));
+
+        Assert.IsTrue(RenderAllowingRestart().Project!.Reloaded, "처음 로드는 재시작 없이 진행한다");
+        Assert.IsFalse(RenderAllowingRestart().Project!.Reloaded, "변경이 없으면 재사용한다");
+
+        project.ReplaceBuild(variantB: true);
+        File.SetLastWriteTimeUtc(project.DllPath, DateTime.UtcNow.AddMinutes(1));
+        var ex = Assert.Throws<XamlRenderException>(() => RenderAllowingRestart());
+        Assert.AreEqual(RenderErrorCodes.HostRestartRequired, ex.Code);
+
+        // 재시작을 허용하지 않는 호출자(기존 동작)는 그대로 다시 불러온다.
+        Assert.AreEqual(80, Render(project, xaml).PixelWidth);
+    }
+
+    [TestMethod]
     public void T07_Locator_PicksNewestArtifactAndReadsAssemblyName()
     {
         using var project = UserProjectFixture.Create(withBuild: false);

@@ -25,20 +25,14 @@ public static class HostApplication
     /// </summary>
     public static void ClearResources()
     {
-        if (_appliedKey == null)
-        {
-            return;
-        }
-        else
-        {
-            // 적용한 앱 리소스가 있음: 비운다.
-        }
-
+        // _appliedKey가 null이어도(앞선 신뢰 렌더가 앱 리소스 적용 도중 실패해 키를 지웠어도) Application.Resources에는 이미 일부가 들어 있을 수 있다.
+        // 그래서 키가 아니라 실제 내용을 보고 비운다.
         try
         {
-            if (Application.Current != null)
+            var application = Application.Current;
+            if (application != null && (application.Resources.Count > 0 || application.Resources.MergedDictionaries.Count > 0))
             {
-                Application.Current.Resources = new ResourceDictionary();
+                application.Resources = new ResourceDictionary();
             }
             else
             {

@@ -29,6 +29,9 @@ public sealed class ProtocolLoop
     private readonly RequestHandler _handler;
     private readonly HostLogger _logger;
 
+    /// <summary>stdout 쓰기가 끊겼다(확장이 파이프를 닫음). writer 스레드가 설정하고 메인 루프가 읽는다.</summary>
+    private volatile bool _outputClosed;
+
     public ProtocolLoop(TextReader input, TextWriter output, RequestHandler handler, HostLogger logger)
     {
         _input = input;
@@ -54,6 +57,16 @@ public sealed class ProtocolLoop
         var reason = "EOF";
         foreach (var line in requests.GetConsumingEnumerable())
         {
+            if (_outputClosed)
+            {
+                reason = "stdout closed"; // 응답을 내보낼 곳이 없다: 계속 처리해도 소용없다.
+                break;
+            }
+            else
+            {
+                // 출력이 살아 있다.
+            }
+
             if (string.IsNullOrWhiteSpace(line))
             {
                 // 빈 줄은 무시한다(응답 없음).
@@ -122,7 +135,11 @@ public sealed class ProtocolLoop
         }
         catch (IOException)
         {
-            // 확장이 파이프를 닫음: 더 쓸 곳이 없으므로 종료한다.
+            // 확장이 파이프를 닫음: 더 쓸 곳이 없으므로 종료한다. 남은 응답은 버려서 큐가 가득 차 메인 루프가 영원히 기다리지 않게 한다.
+            _outputClosed = true;
+            foreach (var _ in responses.GetConsumingEnumerable())
+            {
+            }
         }
     }
 }

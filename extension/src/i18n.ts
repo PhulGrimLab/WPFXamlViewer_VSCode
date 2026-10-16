@@ -38,7 +38,7 @@ export const STRINGS = {
         'auto.failedBefore': '{0}을(를) 미리 보려면 프로젝트 {1}가 먼저 빌드되어야 하는데, 빌드에 실패했습니다. 터미널의 빌드 출력과 Problems 패널의 오류를 고친 뒤 다시 시도하세요.',
         'auto.noOutput': '프로젝트 {1}를 빌드했지만 미리보기가 찾을 빌드 산출물(bin)이 생기지 않았습니다. 출력 경로 설정을 확인하세요.',
         'auto.disabled': '{0}을(를) 미리 보려면 프로젝트 {1}가 먼저 빌드되어야 합니다. 빌드한 뒤 다시 시도하세요(설정 wpfXamlViewer.autoBuildOnPreview를 켜면 자동으로 빌드합니다).',
-        'auto.untrusted': '{0}을(를) 미리 보려면 프로젝트 {1}가 먼저 빌드되어야 합니다. 신뢰하지 않는 폴더에서는 자동으로 빌드하지 않습니다.',
+        'auto.untrusted': '{0}을(를) 미리 보려면 프로젝트 {1}가 먼저 빌드되어야 합니다. 신뢰하지 않는 폴더이거나 열린 워크스페이스 폴더 밖의 프로젝트는 자동으로 빌드하지 않습니다. 직접 빌드하거나 프로젝트가 있는 폴더를 여세요.',
         'auto.noProject': '{0}이(가) 속한 .csproj를 찾지 못했습니다. 프로젝트를 먼저 빌드해야 미리 볼 수 있는 XAML일 수 있습니다.',
         'auto.retry': '다시 빌드',
         // 미리보기 상태/알림
@@ -96,7 +96,7 @@ export const STRINGS = {
         'auto.failedBefore': 'To preview {0}, project {1} must be built first, but the build failed. Fix the errors in the terminal build output and the Problems panel, then try again.',
         'auto.noOutput': 'Project {1} was built, but no build output (bin) that the preview can use was produced. Check the output path settings.',
         'auto.disabled': 'To preview {0}, project {1} must be built first. Build it and try again (turn on the setting wpfXamlViewer.autoBuildOnPreview to build automatically).',
-        'auto.untrusted': 'To preview {0}, project {1} must be built first. Projects are not built automatically in untrusted folders.',
+        'auto.untrusted': 'To preview {0}, project {1} must be built first. Projects in untrusted folders, or outside the opened workspace folders, are not built automatically. Build it yourself or open the folder that contains the project.',
         'auto.noProject': 'Could not find the .csproj that contains {0}. This XAML may need its project to be built before it can be previewed.',
         'auto.retry': 'Build again',
         'preview.openXaml': 'WPF XAML: Run this with a .xaml file open.',

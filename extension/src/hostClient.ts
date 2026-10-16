@@ -20,6 +20,9 @@ export interface HostClientOptions {
     log: LogFn;
 }
 
+/** 호스트가 재시작을 요청하는 오류 코드(host RenderErrorCodes.HostRestartRequired). */
+const HOST_RESTART_REQUIRED = 'HostRestartRequired';
+
 /** 호스트가 `ok:false`로 보고한 오류(렌더 실패 등). 줄/열은 1-base, 없으면 undefined. */
 export class HostRequestError extends Error {
     constructor(public readonly code: string, message: string, public readonly line?: number, public readonly col?: number, public readonly projectReason?: string) {
@@ -75,6 +78,8 @@ export interface RenderParams {
     dpi?: number;
     /** 호스트가 만드는 경고/오류 문구의 언어(`ko`/`en`). 생략하면 한국어. */
     lang?: string;
+    /** 호스트가 "프로젝트가 다시 빌드되어 호스트를 새로 띄워야 한다"(HostRestartRequired)고 답해도 되는가. {@link HostClient.renderLatest}가 자동으로 켜고 처리한다. */
+    canRestart?: boolean;
 }
 
 /** 렌더는 성공했지만 사용자가 알아야 하는 변경/제한(제거한 x:Class, 자리표시자 등). 줄/열은 1-base, 없을 수 있다. */
@@ -112,6 +117,8 @@ interface PendingLatest {
     params: RenderParams;
     resolve: (value: LatestRenderOutcome) => void;
     reject: (reason: Error) => void;
+    /** 호스트 재시작 후 다시 보낸 요청인가(재시작을 한 번만 하도록). */
+    restarted?: boolean;
 }
 
 /** 호스트가 보내는 stderr 중 오류 메시지에 붙일 마지막 부분의 최대 길이. */
@@ -215,7 +222,7 @@ export class HostClient {
         this._latestInFlight = true;
         const seqAtSend = this._latestSeq;
 
-        this.request<RenderResult>('render', job.params).then(
+        this.request<RenderResult>('render', { ...job.params, canRestart: true }).then(
             (result) => {
                 this._latestInFlight = false;
                 if (seqAtSend !== this._latestSeq) {
@@ -229,7 +236,12 @@ export class HostClient {
             },
             (error: Error) => {
                 this._latestInFlight = false;
-                if (seqAtSend !== this._latestSeq) {
+                if (error instanceof HostRequestError && error.code === HOST_RESTART_REQUIRED && !job.restarted && seqAtSend === this._latestSeq) {
+                    // 프로젝트가 다시 빌드됐다: 이 호스트를 정상 종료시키고(다음 요청 때) 새 호스트로 같은 요청을 한 번 더 보낸다.
+                    this._options.log('Info', LogId.HostRecycled, 'project rebuilt; restarting host');
+                    this._recycleWhenIdle = true;
+                    this._latestPending = { ...job, restarted: true };
+                } else if (seqAtSend !== this._latestSeq) {
                     // 실패했더라도 더 새 요청이 있으므로 낡은 오류는 폐기한다.
                     job.resolve({ discarded: true });
                 } else {
@@ -355,6 +367,13 @@ export class HostClient {
         } catch {
             this._options.log('Warn', LogId.HostOutputIgnored, `JSON이 아닌 호스트 출력 무시 (length=${line.length})`);
             return;
+        }
+
+        if (typeof message !== 'object' || message === null) {
+            this._options.log('Warn', LogId.HostOutputIgnored, `객체가 아닌 호스트 출력 무시 (length=${line.length})`);
+            return;
+        } else {
+            // 객체 응답.
         }
 
         const pending = typeof message.id === 'number' ? this._pending.get(message.id) : undefined;

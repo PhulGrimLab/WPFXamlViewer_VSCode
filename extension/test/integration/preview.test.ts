@@ -98,12 +98,13 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         const csproj = '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><AssemblyName>SampleControls</AssemblyName></PropertyGroup></Project>';
         const project = createUserProject(workspace, 'AutoBuildOk',
             '<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:s="clr-namespace:SampleControls;assembly=SampleControls"><s:RedBox/></StackPanel>', false, csproj);
+        const rendersBefore = api.getPreviewState().renderCount;
         await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(project.xamlPath));
         await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
         await waitUntil(() => api.getLogLines().some((l) => l.includes('autoBuild end ok=true')), 120000);
         assert.ok(fs.existsSync(path.join(project.dir, 'bin')), '자동 빌드가 bin을 만들어야 한다');
-        const rendersAfterBuild = api.getPreviewState().renderCount;
-        await waitUntil(() => api.getPreviewState().renderCount > rendersAfterBuild, 30000); // 빌드 뒤 다시 그렸다.
+        // 처음 렌더(산출물 없음) + 빌드 뒤 다시 그리기 = 2번. 빌드가 끝나자마자 다시 그려질 수 있으므로 시작 전 횟수를 기준으로 센다.
+        await waitUntil(() => api.getPreviewState().renderCount >= rendersBefore + 2, 30000);
         editor = await vscode.window.showTextDocument(editor.document);
     });
 
@@ -124,7 +125,15 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
 
     it('I-13 표시 언어 설정을 바꾸면 바로 적용되고, 미리보기가 새 언어로 다시 그려진다', async () => {
         const config = vscode.workspace.getConfiguration('wpfXamlViewer');
+        // 앞 테스트가 다른 문서를 보고 있을 수 있다: 정상 문서를 활성화하고 Open Preview로 그 문서를 미리보기 대상으로 확정한 뒤, 그려질 때까지 기다린다.
+        editor = await vscode.window.showTextDocument(editor.document);
+        const opened = api.getPreviewState().renderCount;
+        await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
+        await waitUntil(() => api.getPreviewState().renderCount > opened);
         try {
+            // 시작 언어가 무엇이든 "바뀌는" 전환이 되도록 먼저 한국어로 고정한 뒤 영어로 바꾼다(같은 언어로 설정하면 바뀐 게 없어 다시 그리지 않는다).
+            await config.update('language', 'ko', vscode.ConfigurationTarget.Global);
+            await waitUntil(() => getLanguage() === 'ko');
             const before = api.getPreviewState().renderCount;
             await config.update('language', 'en', vscode.ConfigurationTarget.Global);
             await waitUntil(() => getLanguage() === 'en');
@@ -134,8 +143,9 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         } finally {
             await config.update('language', undefined, vscode.ConfigurationTarget.Global);
         }
-        // auto: 테스트용 VS Code는 영어 표시 언어이므로 영어가 된다.
-        await waitUntil(() => getLanguage() === 'en');
+        // auto: VS Code 표시 언어를 따른다(한국어면 한국어, 아니면 영어).
+        const expected = vscode.env.language.toLowerCase().startsWith('ko') ? 'ko' : 'en';
+        await waitUntil(() => getLanguage() === expected);
     });
 
     /** M5 시험용: 여러 요소가 있는 XAML을 워크스페이스에 만들어 열고 미리보기를 렌더한 뒤 요소 수가 채워질 때까지 기다린다. */

@@ -36,6 +36,8 @@ rl.on('line', (line) => {
             break;
         case 'garbage':
             process.stdout.write('this is not json\n');
+            process.stdout.write('null\n'); // JSON이지만 객체가 아닌 줄(과거: id 접근에서 TypeError)
+            process.stdout.write('42\n');
             send({ id: 99999, ok: true, result: {} });
             send({ id, ok: true, result: { survived: true } });
             break;

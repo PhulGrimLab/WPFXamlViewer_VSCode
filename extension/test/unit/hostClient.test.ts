@@ -128,7 +128,7 @@ describe('HostClient', () => {
         client = c.client;
         const result = await client.request<{ survived: boolean }>('garbage');
         assert.strictEqual(result.survived, true);
-        assert.strictEqual(c.logs.filter((l) => l.id === 'E014').length, 2);
+        assert.strictEqual(c.logs.filter((l) => l.id === 'E014').length, 4); // 비JSON, null, 숫자(객체가 아닌 JSON), 짝 없는 id
     });
 
     it('한 줄이 여러 조각으로 도착해도 하나의 응답으로 합쳐 처리한다', async () => {

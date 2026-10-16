@@ -89,6 +89,8 @@ public static class Program
         // stdout은 프로토콜 전용: BOM 없는 UTF-8, 줄바꿈은 \n 고정.
         using var input = new StreamReader(Console.OpenStandardInput(), new System.Text.UTF8Encoding(false));
         using var output = new StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { NewLine = "\n" };
+        // 사용자 컨트롤/라이브러리가 Console.WriteLine을 호출해도 프로토콜 스트림(stdout)이 오염되지 않도록 Console.Out을 stderr로 돌린다. 프로토콜은 위에서 연 원시 스트림만 쓴다.
+        Console.SetOut(Console.Error);
         var handler = new RequestHandler(logger, testHooks);
         var reason = new ProtocolLoop(input, output, handler, logger).Run();
 

@@ -76,6 +76,9 @@ async function runDotnet(action: DotnetAction, targetPath: string | undefined, l
     }
 }
 
+/** 자동 빌드를 기다리는 최대 시간(ms). 넘으면 Task를 끝내고 실패로 처리한다. */
+const AUTO_BUILD_TIMEOUT_MS = 10 * 60 * 1000;
+
 /** 미리보기 자동 빌드의 결과. exitCode가 없으면 종료 코드를 알 수 없음(Task 시작 실패 등). */
 export interface BuildOutcome {
     ok: boolean;
@@ -93,23 +96,39 @@ export async function buildProjectAndWait(projectPath: string, log: LogFn): Prom
     } else {
         // 빌드 Task 준비됨.
     }
+    // 종료 이벤트가 `executeTask`의 결과보다 먼저 올 수 있어, 실행 전에 구독해 두고 실행 객체가 정해지면 쌓아 둔 이벤트와도 비교한다.
+    // 제한 시간이 지나면 Task를 끝내고 실패로 처리한다(끝나지 않는 빌드가 "빌드 중" 상태에 영원히 머무르지 않게).
+    let execution: vscode.TaskExecution | undefined;
+    const early: vscode.TaskProcessEndEvent[] = [];
+    let finish: (outcome: BuildOutcome) => void = () => undefined;
+    const ended = new Promise<BuildOutcome>((resolve) => { finish = resolve; });
+    const subscription = vscode.tasks.onDidEndTaskProcess((e) => {
+        if (!execution) {
+            early.push(e);
+        } else if (e.execution === execution) {
+            finish({ ok: e.exitCode === 0, exitCode: e.exitCode });
+        } else {
+            // 다른 Task의 종료.
+        }
+    });
+    const timer = setTimeout(() => {
+        execution?.terminate();
+        finish({ ok: false });
+    }, AUTO_BUILD_TIMEOUT_MS);
     try {
-        // 종료 이벤트를 놓치지 않도록 실행 전에 구독하고, 실행 객체가 정해진 뒤 비교한다.
-        let execution: vscode.TaskExecution | undefined;
-        const ended = new Promise<BuildOutcome>((resolve) => {
-            const subscription = vscode.tasks.onDidEndTaskProcess((e) => {
-                if (execution && e.execution === execution) {
-                    subscription.dispose();
-                    resolve({ ok: e.exitCode === 0, exitCode: e.exitCode });
-                } else {
-                    // 다른 Task의 종료.
-                }
-            });
-        });
         execution = await vscode.tasks.executeTask(task);
+        const hit = early.find((e) => e.execution === execution);
+        if (hit) {
+            finish({ ok: hit.exitCode === 0, exitCode: hit.exitCode });
+        } else {
+            // 아직 끝나지 않음: 구독이 알려 준다.
+        }
         return await ended;
     } catch {
         return { ok: false };
+    } finally {
+        clearTimeout(timer);
+        subscription.dispose();
     }
 }
 

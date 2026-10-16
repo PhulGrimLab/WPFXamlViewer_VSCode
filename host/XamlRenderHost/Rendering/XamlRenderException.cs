@@ -23,6 +23,15 @@ public static class RenderErrorCodes
 
     /// <summary>위 범주에 들지 않는 렌더 중 예외.</summary>
     public const string RenderFailed = "RenderFailed";
+
+    /// <summary>
+    /// 프로젝트 산출물이 바뀌어 다시 불러와야 하는데, 이 호스트는 이미 이전 버전을 불러 둔 상태다. 같은 프로세스에서 같은 라이브러리(예: WPF UI)를 두 번 불러오면
+    /// 의존 속성이 중복 등록되어 렌더가 모두 실패하므로, 호출자가 재시작을 허용했으면(`canRestart`) 호스트를 새로 띄워 다시 요청하게 한다.
+    /// </summary>
+    public const string HostRestartRequired = "HostRestartRequired";
+
+    /// <summary>신뢰하지 않은 폴더(Tier 0)의 XAML이 코드 실행/외부 읽기로 이어질 수 있는 구성을 담고 있어 거부했다(`UntrustedXamlGuard`).</summary>
+    public const string UntrustedBlocked = "UntrustedBlocked";
 }
 
 /// <summary>

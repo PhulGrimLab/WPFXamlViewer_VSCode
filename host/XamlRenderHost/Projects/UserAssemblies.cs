@@ -225,6 +225,32 @@ public sealed class UserAssemblies
         }
     }
 
+    /// <summary>이 프로젝트의 이전 버전을 이미 불러 두었고 산출물이 그와 달라졌는가(= <see cref="Ensure"/>가 다시 불러올 상황).</summary>
+    public bool NeedsReload(ProjectArtifact artifact)
+    {
+        lock (_gate)
+        {
+            if (!_projects.TryGetValue(artifact.ProjectFile, out var existing))
+            {
+                return false;
+            }
+            else
+            {
+                // 불러 둔 적 있음: 파일이 바뀌었는지 비교.
+            }
+            try
+            {
+                var info = new FileInfo(artifact.AssemblyPath);
+                return info.Exists
+                    && !(existing.SourcePath == artifact.AssemblyPath && existing.SourceWriteTimeUtc == info.LastWriteTimeUtc && existing.SourceLength == info.Length);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return false; // 읽을 수 없으면 Ensure가 실패로 처리한다.
+            }
+        }
+    }
+
     /// <summary>
     /// 산출물을 로드한다(이미 같은 버전이 로드되어 있으면 재사용). 실패는 예외 대신 Failure 문자열로 돌려준다(사용자 코드/파일 상태 문제라서).
     /// </summary>
@@ -297,7 +323,7 @@ public sealed class UserAssemblies
                 }
                 return new UserAssemblyLoad(assembly, true, started.ElapsedMilliseconds, null);
             }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BadImageFormatException or FileLoadException)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 TryDeleteDirectory(tempDirectory);
                 return new UserAssemblyLoad(null, false, started.ElapsedMilliseconds, $"{ex.GetType().Name}: {ex.Message}");
@@ -505,7 +531,7 @@ public sealed class UserAssemblies
     /// </summary>
     private static string CopyOutputDirectory(string sourceDirectory)
     {
-        var target = Path.Combine(Path.GetTempPath(), TempDirectoryPrefix + Guid.NewGuid().ToString("N"));
+        var target = Path.Combine(Path.GetTempPath(), TempDirectoryPrefix + Environment.ProcessId + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(target);
         var hasDepsFile = Directory.GetFiles(sourceDirectory, "*.deps.json", SearchOption.TopDirectoryOnly).Length > 0;
         if (hasDepsFile)
@@ -579,7 +605,8 @@ public sealed class UserAssemblies
             var threshold = DateTime.UtcNow.AddMinutes(-StaleTempDirectoryAgeMinutes);
             foreach (var directory in Directory.GetDirectories(Path.GetTempPath(), TempDirectoryPrefix + "*"))
             {
-                if (Directory.GetCreationTimeUtc(directory) < threshold)
+                var created = Directory.GetCreationTimeUtc(directory);
+                if (created < threshold && !IsOwnedByRunningHost(directory, created))
                 {
                     TryDeleteDirectory(directory);
                 }
@@ -592,6 +619,37 @@ public sealed class UserAssemblies
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // 임시 폴더를 훑지 못함: 정리는 선택 사항이라 무시한다.
+        }
+    }
+
+    /// <summary>
+    /// 폴더 이름의 PID(`xamlviewer-user-&lt;pid&gt;-&lt;guid&gt;`)가 지금 실행 중인 프로세스(폴더보다 먼저 시작된 것)이면 true — 그 호스트가 쓰는 폴더다.
+    /// 쓰는 호스트가 있는 폴더는 지우면 안 된다: 로드된 DLL은 잠겨 삭제가 실패하지만, 잠기지 않은 파일(아직 불러오지 않은 의존 DLL, deps.json 등)은 먼저 지워져
+    /// 그 호스트가 나중에 의존성을 불러올 때 깨진다. PID가 없는 옛 형식 이름은 소유자를 알 수 없으므로 하루가 지난 것만 지운다.
+    /// </summary>
+    private static bool IsOwnedByRunningHost(string directory, DateTime createdUtc)
+    {
+        var name = Path.GetFileName(directory);
+        var rest = name.Length > TempDirectoryPrefix.Length ? name[TempDirectoryPrefix.Length..] : string.Empty;
+        var dash = rest.IndexOf('-');
+        if (dash <= 0 || !int.TryParse(rest[..dash], out var pid))
+        {
+            return createdUtc > DateTime.UtcNow.AddDays(-1); // 옛 형식: 하루 이내면 소유자가 살아 있을 수 있다.
+        }
+        else
+        {
+            // PID가 있는 이름: 그 프로세스가 아직 살아 있는지 본다.
+        }
+
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            // PID는 재사용된다: 폴더보다 나중에 시작한 프로세스는 주인이 아니다.
+            return !process.HasExited && process.StartTime.ToUniversalTime() <= createdUtc.AddMinutes(1);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            return false; // 그 PID의 프로세스가 없다(또는 읽을 수 없다): 남은 폴더다.
         }
     }
 

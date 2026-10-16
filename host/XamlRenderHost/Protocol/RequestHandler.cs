@@ -32,6 +32,9 @@ public static class ProtocolErrorCodes
     public const string InvalidRequest = "InvalidRequest";
     public const string InvalidParams = "InvalidParams";
     public const string UnknownMethod = "UnknownMethod";
+
+    /// <summary>처리 중 예상하지 못한 예외(호스트는 계속 산다). 메시지에는 예외 형식만 담는다(요청 내용은 싣지 않는다).</summary>
+    public const string InternalError = "InternalError";
 }
 
 /// <summary>요청 하나의 처리 결과: 응답 JSON 한 줄과 "처리 후 종료해야 하는가".</summary>
@@ -64,9 +67,23 @@ public sealed class RequestHandler
     /// </summary>
     public HandleResult Handle(string line)
     {
+        JsonNode? id = null;
+        try
+        {
+            return HandleCore(line, ref id);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // 어떤 입력/예외도 호스트를 죽이면 안 된다(악의적 문서 하나로 호스트가 종료되면 요청이 유실된다). 응답 1건은 반드시 돌려준다.
+            _logger.Log(LogLevel.Error, LogIds.RenderFailed, $"id={id?.ToJsonString() ?? "null"} internal={ex.GetType().Name}");
+            return new HandleResult(Error(id, ProtocolErrorCodes.InternalError, ex.GetType().Name), false);
+        }
+    }
+
+    private HandleResult HandleCore(string line, ref JsonNode? id)
+    {
         Interlocked.Increment(ref _handledCount);
 
-        JsonNode? id = null;
         string method;
         JsonNode? parameters;
         try
@@ -77,8 +94,9 @@ public sealed class RequestHandler
             method = node["method"]?.GetValue<string>() ?? throw new JsonException("method가 없습니다.");
             parameters = node["params"];
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException or ArgumentException)
         {
+            // ArgumentException: 같은 키가 두 번 있는 JSON(`{"id":1,"id":2}`)은 파싱은 되지만 키를 읽을 때 이 예외가 난다.
             return new HandleResult(Error(id, ProtocolErrorCodes.InvalidRequest, ex.Message), false);
         }
 
@@ -124,6 +142,7 @@ public sealed class RequestHandler
         bool allowProjectAssemblies;
         double? width, height;
         double dpi;
+        bool allowHostRestart;
         try
         {
             xaml = p?["xaml"]?.GetValue<string>() ?? throw new JsonException("params.xaml(문자열)이 필요합니다.");
@@ -132,6 +151,7 @@ public sealed class RequestHandler
             width = p["width"]?.GetValue<double>();
             height = p["height"]?.GetValue<double>();
             dpi = p["dpi"]?.GetValue<double>() ?? XamlRenderer.DefaultDpi;
+            allowHostRestart = p["canRestart"]?.GetValue<bool>() ?? false;
             Loc.Set(p["lang"]?.GetValue<string>()); // 경고/오류 문구의 언어(없으면 한국어).
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
@@ -139,10 +159,22 @@ public sealed class RequestHandler
             return Error(id, ProtocolErrorCodes.InvalidParams, ex.Message);
         }
 
+        // 숫자 범위: 무한대/0/음수 DPI나 크기는 렌더러에 닿기 전에 거부한다(0 DPI는 1x1 이미지와 음수 좌표를 만든다).
+        if (!double.IsFinite(dpi) || dpi < MinDpi || dpi > MaxDpi
+            || (width.HasValue && !(double.IsFinite(width.Value) && width.Value > 0))
+            || (height.HasValue && !(double.IsFinite(height.Value) && height.Value > 0)))
+        {
+            return Error(id, ProtocolErrorCodes.InvalidParams, $"dpi는 {MinDpi}~{MaxDpi}, width/height는 0보다 큰 유한한 수여야 합니다.");
+        }
+        else
+        {
+            // 범위 안.
+        }
+
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var result = XamlRenderer.Render(new RenderRequest(xaml, width, height, dpi, filePath, allowProjectAssemblies));
+            var result = XamlRenderer.Render(new RenderRequest(xaml, width, height, dpi, filePath, allowProjectAssemblies, allowHostRestart));
             var warnings = result.Warnings ?? Array.Empty<RenderWarning>();
             _logger.Log(LogLevel.Info, LogIds.RenderSucceeded,
                 $"id={id?.ToJsonString() ?? "null"} ms={stopwatch.ElapsedMilliseconds} size={result.PixelWidth}x{result.PixelHeight} elements={result.Elements?.Count ?? 0} warnings={warnings.Count}");
@@ -198,6 +230,12 @@ public sealed class RequestHandler
             return Error(id, ex.Code, ex.Message, ex.Line, ex.Column, ex.ProjectReason);
         }
     }
+
+    /// <summary>오류 응답 메시지의 최대 길이.</summary>
+    private const int MaxErrorMessageLength = 2000;
+
+    /// <summary>render 요청이 받아들이는 DPI 범위.</summary>
+    private const double MinDpi = 24, MaxDpi = 960;
 
     /// <summary>렌더 실패 원인 로그(스택 포함)의 최대 길이.</summary>
     private const int MaxCauseLogLength = 1800;
@@ -315,6 +353,15 @@ public sealed class RequestHandler
 
     private static string Error(JsonNode? id, string code, string message, int? line = null, int? column = null, string? projectReason = null)
     {
+        // 메시지 길이 제한: 파서가 입력 조각을 길게 담아 응답이 폭주하는 것을 막는다.
+        if (message.Length > MaxErrorMessageLength)
+        {
+            message = message[..MaxErrorMessageLength] + "…";
+        }
+        else
+        {
+            // 짧은 메시지.
+        }
         var error = new JsonObject { ["code"] = code, ["message"] = message };
         if (line.HasValue)
         {

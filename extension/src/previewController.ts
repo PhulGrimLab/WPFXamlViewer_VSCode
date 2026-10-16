@@ -11,6 +11,7 @@ import { HostClient, HostRequestError, LogFn, RenderWarning } from './hostClient
 import { getLanguage, t } from './i18n';
 import { LogId } from './logFormat';
 import { buildProjectAndWait } from './projectBuild';
+import { canRunProjectCode } from './workspaceTrust';
 import { buildPreviewHtml } from './previewHtml';
 import { Background, ToWebviewMessage, parseFromWebview } from './previewMessages';
 import { DOTNET_DESKTOP_RUNTIME_URL, dotNetRuntimeMissingMessage, isDotNetRuntimeMissing } from './runtimeCheck';
@@ -195,19 +196,20 @@ export class PreviewController implements vscode.Disposable {
     }
 
     private _isXaml(document: vscode.TextDocument): boolean {
-        return document.fileName.toLowerCase().endsWith(XAML_EXTENSION);
+        return (document.uri.scheme === 'file' || document.uri.scheme === 'untitled') && document.fileName.toLowerCase().endsWith(XAML_EXTENSION);
     }
 
     private _createPanel(): vscode.WebviewPanel {
         const panel = vscode.window.createWebviewPanel(
             PREVIEW_VIEW_TYPE, 'WPF XAML Preview', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-            { enableScripts: true, retainContextWhenHidden: true });
+            { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] });
         const nonce = crypto.randomBytes(NONCE_BYTES).toString('hex');
         panel.webview.html = buildPreviewHtml(nonce, panel.webview.cspSource, getLanguage());
         panel.webview.onDidReceiveMessage((raw) => void this._handleWebviewMessage(raw));
         panel.onDidDispose(() => {
             this._panel = undefined;
             this._debouncer.cancel();
+            this._diagnostics.clear();
             this._status.hide();
             this._elements = [];
             this._highlightedId = undefined;
@@ -296,7 +298,7 @@ export class PreviewController implements vscode.Disposable {
             xaml: document.getText(),
             filePath: document.uri.scheme === 'file' ? document.uri.fsPath : undefined,
             // 사용자 코드를 실행하는 Tier 1은 신뢰된 워크스페이스에서만 허용한다(doc/01 3.3 규칙 1).
-            allowProjectAssemblies: vscode.workspace.isTrusted,
+            allowProjectAssemblies: canRunProjectCode(document.uri.scheme === 'file' ? document.uri.fsPath : undefined),
             width: this._size.width,
             height: this._size.height,
         }).then(
@@ -394,7 +396,8 @@ export class PreviewController implements vscode.Disposable {
             reason,
             needed,
             autoBuildEnabled: vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>(CONFIG_AUTO_BUILD, true),
-            trusted: vscode.workspace.isTrusted,
+            // 신뢰된 워크스페이스이면서 XAML과 프로젝트가 모두 열린 폴더 안에 있을 때만 자동 빌드한다(폴더 없는 창의 파일로 위쪽 .csproj가 빌드되는 것을 막는다).
+            trusted: canRunProjectCode(document.uri.scheme === 'file' ? document.uri.fsPath : undefined) && canRunProjectCode(project),
             project,
             state: project ? this._autoBuild.get(project) : undefined,
         });
@@ -427,6 +430,11 @@ export class PreviewController implements vscode.Disposable {
 
     /** 프로젝트를 빌드하고(진행을 미리보기에 표시), 성공하면 다시 렌더하고, 실패하면 그 사실을 표시한다. */
     private async _buildThenRender(document: vscode.TextDocument, project: string, message: string): Promise<void> {
+        if (this._autoBuild.get(project) === 'building') {
+            return; // 같은 프로젝트의 빌드가 이미 진행 중이다(알림의 "다시 빌드"를 연달아 눌러도 빌드는 하나만 돈다).
+        } else {
+            // 새 빌드.
+        }
         this._autoBuild.set(project, 'building');
         this._notified.clear();
         this._setStatus(t('preview.buildRunning'), undefined);
@@ -436,19 +444,16 @@ export class PreviewController implements vscode.Disposable {
         this._log('Info', LogId.ProjectBuild, `autoBuild start project=${project.split(/[\\/]/).pop()}`);
         const outcome = await buildProjectAndWait(project, this._log);
         this._log('Info', LogId.ProjectBuild, `autoBuild end ok=${outcome.ok} exitCode=${outcome.exitCode ?? 'n/a'}`);
-        if (!this._panel || this._document !== document) {
-            this._autoBuild.delete(project); // 그 사이 미리보기가 닫히거나 다른 문서로 바뀌었다: 다음에 다시 판단한다.
+        if (!this._panel) {
+            this._autoBuild.delete(project); // 그 사이 미리보기가 닫혔다: 다음에 다시 판단한다.
             return;
         } else {
-            // 같은 미리보기를 보고 있다.
+            // 미리보기가 살아 있다.
         }
-        if (outcome.ok) {
-            this._autoBuild.set(project, 'noOutput'); // 다시 그렸을 때 산출물을 찾으면(Loaded) 비운다. 못 찾으면 이 값으로 반복을 막고 안내한다.
-            this._renderNow();
-        } else {
-            this._autoBuild.set(project, 'failed');
-            this._reportMissingBuild(document, 'failedBefore', true);
-        }
+        // 빌드하는 동안 다른 XAML로 바뀌었을 수 있다: 상태는 프로젝트 단위로 기록하고, 끝나면 **지금 보는 문서**를 다시 그려 같은 프로젝트의 문서가 "빌드 중"에 멈추지 않게 한다.
+        // 성공: 다시 그렸을 때 산출물을 찾으면(Loaded) 상태를 비운다. 못 찾으면 'noOutput'으로 반복을 막고 안내한다. 실패: 'failed'로 두면 다시 그릴 때 실패 안내가 나온다.
+        this._autoBuild.set(project, outcome.ok ? 'noOutput' : 'failed');
+        this._renderNow();
     }
 
     /** 빌드가 필요/실패했음을 알림으로 알린다(같은 안내를 반복해 띄우지 않도록 "다시 빌드" 선택지만 준다). */

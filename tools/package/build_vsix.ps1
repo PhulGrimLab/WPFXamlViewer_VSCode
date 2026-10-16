@@ -37,7 +37,10 @@ $MinDotNetMajor = 10
 $MinNodeMajor = 20   # @vscode/vsce 3.x 가 Node 20 이상을 요구한다.
 
 # 설치 직후 같은 세션에서 PATH가 갱신되지 않은 경우를 대비해 머신/사용자 PATH를 다시 합친다.
-$env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
+# 이미 PATH에 있는 항목(예: CI의 setup-dotnet/setup-node가 앞세운 고정 버전)은 그대로 두고, 없는 머신/사용자 PATH 항목만 **뒤에** 덧붙인다(덮어쓰면 고정한 SDK 대신 다른 SDK가 쓰인다).
+$known = @($env:Path -split ';' | Where-Object { $_ })
+$extra = @(([Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')) -split ';' | Where-Object { $_ -and ($known -notcontains $_) })
+$env:Path = (($known + $extra) -join ';')
 
 function Write-Step([string]$Text) { Write-Host "== $Text" -ForegroundColor Cyan }
 

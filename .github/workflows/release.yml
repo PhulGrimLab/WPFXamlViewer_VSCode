@@ -4,25 +4,34 @@ name: Release
 # 수동 실행(Run workflow)은 릴리스를 만들지 않고 테스트·패키징만 확인해 결과물을 아티팩트로 남긴다.
 # 릴리스 본문은 doc/release-notes/<태그>.md 가 있으면 그것을, 없으면 자동 생성 노트를 쓴다.
 # extension/package.json 의 "preview": true 이면 Pre-release로 올린다.
+#
+# 보안: 서드파티 코드를 실행하는 단계(npm ci / npm test)는 읽기 전용 토큰의 `build` 잡에서만 돌고,
+# 쓰기 권한(contents: write)은 릴리스를 만드는 `release` 잡에만 준다. 액션은 커밋 SHA로 고정한다(주석은 태그).
+# 릴리스 잡은 태그가 가리키는 커밋이 main의 조상일 때만 릴리스를 만든다(다른 브랜치의 커밋을 v* 태그로 릴리스하지 못하게).
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
 
 permissions:
-  contents: write # 릴리스 생성에 필요
+  contents: read
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      prerelease: ${{ steps.ver.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           global-json-file: global.json
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
 
@@ -59,23 +68,46 @@ jobs:
         shell: pwsh
         run: ./tools/package/build_vsix.ps1
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wpf-xaml-live-preview-${{ steps.ver.outputs.version }}
           path: |
             artifacts/*.vsix
             artifacts/SHA256SUMS.txt
 
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 릴리스 생성에 필요(이 잡에서만)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # main 계보 확인에 전체 이력이 필요하다
+          persist-credentials: false
+
+      - name: Verify tag is on main
+        run: |
+          git fetch --no-tags "https://github.com/${GITHUB_REPOSITORY}.git" main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" refs/remotes/origin/main; then
+            echo "::error::태그 $GITHUB_REF_NAME 의 커밋이 main 브랜치에 없습니다. main에 병합한 커밋에서만 릴리스합니다."
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wpf-xaml-live-preview-${{ needs.build.outputs.version }}
+          path: artifacts
+
       - name: Create GitHub Release
-        if: github.ref_type == 'tag'
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
         run: |
-          $tag = $env:GITHUB_REF_NAME
-          $flags = @()
-          if ('${{ steps.ver.outputs.prerelease }}' -eq 'true') { $flags += '--prerelease' }
-          $notes = "doc/release-notes/$tag.md"
-          if (Test-Path $notes) { $flags += @('--notes-file', $notes) } else { $flags += '--generate-notes' }
-          $assets = Get-ChildItem artifacts/*.vsix, artifacts/SHA256SUMS.txt | ForEach-Object { $_.FullName }
-          gh release create $tag @assets --title "WPF XAML Live Preview $tag" --verify-tag @flags
+          tag="$GITHUB_REF_NAME"
+          flags=()
+          if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); fi
+          notes="doc/release-notes/$tag.md"
+          if [ -f "$notes" ]; then flags+=(--notes-file "$notes"); else flags+=(--generate-notes); fi
+          gh release create "$tag" artifacts/*.vsix artifacts/SHA256SUMS.txt --title "WPF XAML Live Preview $tag" --verify-tag "${flags[@]}"
