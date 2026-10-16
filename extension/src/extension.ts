@@ -3,11 +3,12 @@ import { registerLanguage } from './language';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { COMMAND_OPEN_PREVIEW, HOST_LOG_DIR_NAME } from './constants';
+import { COMMAND_OPEN_PREVIEW, COMMAND_RESET_CONSENT, HOST_LOG_DIR_NAME } from './constants';
 import { HostClient, LogFn } from './hostClient';
 import { resolveHostExe } from './hostLocator';
 import { LogId, formatLogLine } from './logFormat';
 import { PreviewController } from './previewController';
+import { ProjectConsent } from './projectConsent';
 import { registerProjectBuildCommands } from './projectBuild';
 
 /** 통합 테스트(T4/T5)가 확장 상태를 읽는 API. activate의 반환값으로 노출한다. */
@@ -31,6 +32,8 @@ export interface ExtensionTestApi {
     hostPath: string | undefined;
     /** 현재 호스트 프로세스 id(없으면 undefined). */
     getHostPid(): number | undefined;
+    /** 테스트용: 프로젝트(.csproj 경로, 없으면 워크스페이스 폴더)의 코드 실행 허용을 미리 기록한다. */
+    grantProjectConsent(key: string): Promise<void>;
     /** 확장 로그 줄(최근 {@link TEST_LOG_BUFFER_MAX}개). */
     getLogLines(): string[];
 }
@@ -71,6 +74,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         hostFound: false,
         hostPath: undefined,
         getHostPid: () => undefined,
+        grantProjectConsent: () => Promise.resolve(),
         getLogLines: () => [...logLines],
     };
     let onLanguageChanged: () => void = () => undefined;
@@ -90,12 +94,13 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
     const logDir = path.join(context.globalStorageUri.fsPath, HOST_LOG_DIR_NAME);
     fs.mkdirSync(logDir, { recursive: true });
     const client = new HostClient({ command: hostExe, args: ['serve', '--log-dir', logDir], log });
-    const controller = new PreviewController(client, log);
+    const controller = new PreviewController(client, log, new ProjectConsent(context.workspaceState));
     onLanguageChanged = () => controller.applyLanguage();
     context.subscriptions.push(
         controller,
         { dispose: () => { void client.dispose(); } },
         vscode.commands.registerCommand(COMMAND_OPEN_PREVIEW, () => controller.open()),
+        vscode.commands.registerCommand(COMMAND_RESET_CONSENT, () => controller.resetConsent()),
     );
     controller.handleActiveEditor(vscode.window.activeTextEditor);
     api.hostFound = true;
@@ -112,6 +117,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
     api.simulateWebviewMessage = (raw) => controller.simulateWebviewMessage(raw);
     api.setView = (message) => controller.setView(message);
     api.getHostPid = () => client.pid;
+    api.grantProjectConsent = (key) => controller.grantConsent(key);
     return api;
 }
 

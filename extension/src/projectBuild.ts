@@ -76,6 +76,27 @@ async function runDotnet(action: DotnetAction, targetPath: string | undefined, l
     }
 }
 
+/**
+ * 실행할 `dotnet`. 신뢰된 폴더라도 빌드 대상 프로젝트 폴더(cwd)에 놓인 `dotnet.exe`/`dotnet.cmd`가 먼저 실행되지 않도록, 설치된 .NET의 절대 경로가 있으면 그것을 쓴다
+ * (`DOTNET_ROOT` → `%ProgramFiles%\dotnet`). 못 찾으면 PATH의 `dotnet`.
+ */
+function dotnetExecutable(): string {
+    const candidates = [process.env.DOTNET_ROOT, process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'dotnet') : undefined];
+    for (const root of candidates) {
+        if (root) {
+            const exe = path.join(root, 'dotnet.exe');
+            if (fs.existsSync(exe)) {
+                return exe;
+            } else {
+                // 이 위치에는 없다.
+            }
+        } else {
+            // 환경 변수 없음.
+        }
+    }
+    return 'dotnet';
+}
+
 /** 자동 빌드를 기다리는 최대 시간(ms). 넘으면 Task를 끝내고 실패로 처리한다. */
 const AUTO_BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -111,12 +132,22 @@ export async function buildProjectAndWait(projectPath: string, log: LogFn): Prom
             // 다른 Task의 종료.
         }
     });
+    let timedOut = false;
     const timer = setTimeout(() => {
+        timedOut = true;
         execution?.terminate();
         finish({ ok: false });
     }, AUTO_BUILD_TIMEOUT_MS);
     try {
-        execution = await vscode.tasks.executeTask(task);
+        // executeTask 자체가 끝나지 않아도 제한 시간(ended)이 풀어 준다. 시간이 지난 뒤에 Task가 시작되면 곧바로 끝낸다.
+        const started = vscode.tasks.executeTask(task);
+        void started.then((e) => { if (timedOut) { e.terminate(); } }, () => undefined);
+        execution = await Promise.race([started, ended.then(() => undefined)]);
+        if (!execution) {
+            return await ended; // 제한 시간이 먼저 지났다.
+        } else {
+            // 시작됨.
+        }
         const hit = early.find((e) => e.execution === execution);
         if (hit) {
             finish({ ok: hit.exitCode === 0, exitCode: hit.exitCode });
@@ -158,7 +189,7 @@ function createDotnetTask(action: DotnetAction, targetPath: string | undefined, 
         vscode.TaskScope.Workspace,
         name,
         'WPF XAML',
-        new vscode.ProcessExecution('dotnet', args, { cwd: path.dirname(targetPath) }),
+        new vscode.ProcessExecution(dotnetExecutable(), args, { cwd: path.dirname(targetPath) }),
         '$msCompile',
     );
     task.group = action === 'clean' || action === 'restore' ? undefined : vscode.TaskGroup.Build;

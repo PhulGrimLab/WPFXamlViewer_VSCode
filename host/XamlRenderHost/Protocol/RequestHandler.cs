@@ -143,6 +143,7 @@ public sealed class RequestHandler
         double? width, height;
         double dpi;
         bool allowHostRestart;
+        string? workspaceRoot;
         try
         {
             xaml = p?["xaml"]?.GetValue<string>() ?? throw new JsonException("params.xaml(문자열)이 필요합니다.");
@@ -152,6 +153,7 @@ public sealed class RequestHandler
             height = p["height"]?.GetValue<double>();
             dpi = p["dpi"]?.GetValue<double>() ?? XamlRenderer.DefaultDpi;
             allowHostRestart = p["canRestart"]?.GetValue<bool>() ?? false;
+            workspaceRoot = p["workspaceRoot"]?.GetValue<string>(); // 프로젝트/산출물 탐색을 이 폴더 안으로 제한한다(없으면 제한 없음).
             Loc.Set(p["lang"]?.GetValue<string>()); // 경고/오류 문구의 언어(없으면 한국어).
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
@@ -174,7 +176,7 @@ public sealed class RequestHandler
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var result = XamlRenderer.Render(new RenderRequest(xaml, width, height, dpi, filePath, allowProjectAssemblies, allowHostRestart));
+            var result = XamlRenderer.Render(new RenderRequest(xaml, width, height, dpi, filePath, allowProjectAssemblies, allowHostRestart, workspaceRoot));
             var warnings = result.Warnings ?? Array.Empty<RenderWarning>();
             _logger.Log(LogLevel.Info, LogIds.RenderSucceeded,
                 $"id={id?.ToJsonString() ?? "null"} ms={stopwatch.ElapsedMilliseconds} size={result.PixelWidth}x{result.PixelHeight} elements={result.Elements?.Count ?? 0} warnings={warnings.Count}");
@@ -349,7 +351,7 @@ public sealed class RequestHandler
     }
 
     private static string Ok(JsonNode? id, JsonObject result)
-        => new JsonObject { ["id"] = id, ["ok"] = true, ["result"] = result }.ToJsonString();
+        => new JsonObject { ["id"] = id?.DeepClone(), ["ok"] = true, ["result"] = result }.ToJsonString();
 
     private static string Error(JsonNode? id, string code, string message, int? line = null, int? column = null, string? projectReason = null)
     {
@@ -387,6 +389,6 @@ public sealed class RequestHandler
         {
             // 프로젝트 이유 없음: 필드를 생략한다.
         }
-        return new JsonObject { ["id"] = id, ["ok"] = false, ["error"] = error }.ToJsonString();
+        return new JsonObject { ["id"] = id?.DeepClone(), ["ok"] = false, ["error"] = error }.ToJsonString();
     }
 }

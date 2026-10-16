@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -36,6 +37,17 @@ describe('I-09 설치 스모크 (.vsix 설치본 + 번들 호스트 + 실제 net
 
     it('실제 WPF 프로젝트의 MainWindow.xaml이 미리보기된다(x:Class/이벤트 제거, App.xaml 리소스, 사용자 컨트롤 Tier 1)', async () => {
         const xamlPath = process.env.XAMLVIEWER_SMOKE_XAML as string;
+        // 프로젝트 코드 실행은 프로젝트별 허용이 필요하다: 사용자가 허용한 것으로 미리 기록한다(.csproj는 XAML에서 위로 올라가며 찾는다).
+        let directory = path.dirname(xamlPath);
+        for (let level = 0; level < 6; level++) {
+            const projects = fs.readdirSync(directory).filter((entry) => entry.toLowerCase().endsWith('.csproj'));
+            if (projects.length > 0) {
+                await api.grantProjectConsent(path.join(directory, projects[0]));
+                break;
+            } else {
+                directory = path.dirname(directory);
+            }
+        }
         await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(xamlPath));
         await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
         await waitUntil(() => api.getPreviewState().renderCount > 0 && api.getPreviewState().lastImageSize !== undefined);

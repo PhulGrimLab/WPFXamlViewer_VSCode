@@ -89,8 +89,9 @@ jobs:
 
       - name: Verify tag is on main
         run: |
-          git fetch --no-tags "https://github.com/${GITHUB_REPOSITORY}.git" main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" refs/remotes/origin/main; then
+          # fetch-depth: 0 체크아웃이 origin/main을 이미 받아 두었다. 같은 ref를 다시 받다가(+ 없는 fast-forward 전용 fetch) main이 강제 갱신된 때 엉뚱한 오류가 나지 않게, 최신 main만 별도 ref로 받는다.
+          git fetch --no-tags "https://github.com/${GITHUB_REPOSITORY}.git" +main:refs/remotes/verify/main
+          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" refs/remotes/verify/main; then
             echo "::error::태그 $GITHUB_REF_NAME 의 커밋이 main 브랜치에 없습니다. main에 병합한 커밋에서만 릴리스합니다."
             exit 1
           fi

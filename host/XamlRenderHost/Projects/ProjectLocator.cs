@@ -37,15 +37,16 @@ public static class ProjectLocator
     private const string BinDirectoryName = "bin";
 
     /// <summary>
-    /// 입력: XAML 파일의 절대 경로. 출력: 산출물 또는 실패 이유. 입출력 예외는 "없음"으로 취급한다(읽을 수 없는 폴더 등).
+    /// 입력: XAML 파일의 절대 경로, (선택) 워크스페이스 루트. 루트를 주면 그 **안**의 `.csproj`/`.projitems`/산출물만 찾는다(루트 밖 폴더의 프로젝트 DLL을 불러오지 않게).
+    /// 출력: 산출물 또는 실패 이유. 입출력 예외는 "없음"으로 취급한다(읽을 수 없는 폴더 등).
     /// </summary>
-    public static ProjectLookup Find(string xamlFilePath)
+    public static ProjectLookup Find(string xamlFilePath, string? workspaceRoot = null)
     {
-        var projectFile = FindNearestProjectFile(xamlFilePath);
+        var projectFile = FindNearestProjectFile(xamlFilePath, workspaceRoot);
         if (projectFile == null)
         {
             // 공유 프로젝트(`.projitems`)의 XAML이면 그것을 가져가는(Import) 앱 프로젝트의 산출물을 쓴다.
-            return FindViaSharedProject(xamlFilePath) ?? new ProjectLookup(null, ProjectLookupReasons.NoProject);
+            return FindViaSharedProject(xamlFilePath, workspaceRoot) ?? new ProjectLookup(null, ProjectLookupReasons.NoProject);
         }
         else
         {
@@ -81,9 +82,17 @@ public static class ProjectLocator
     /// XAML이 공유 프로젝트(`.projitems`가 있는 폴더 트리) 안에 있으면, 그 `.projitems`를 Import하는 `.csproj` 중 산출물이 있는 가장 최신 것을 돌려준다.
     /// 공유 프로젝트 자체는 빌드 산출물이 없어서 가장 가까운 `.csproj`가 없다. 못 찾으면 null.
     /// </summary>
-    private static ProjectLookup? FindViaSharedProject(string xamlFilePath)
+    private static ProjectLookup? FindViaSharedProject(string xamlFilePath, string? workspaceRoot)
     {
         var sharedItems = FindNearestSharedItems(xamlFilePath);
+        if (sharedItems != null && !IsUnderRoot(sharedItems, workspaceRoot))
+        {
+            return null; // 워크스페이스 밖의 공유 프로젝트.
+        }
+        else
+        {
+            // 경계 안(또는 경계 없음).
+        }
         if (sharedItems == null)
         {
             return null;
@@ -97,13 +106,19 @@ public static class ProjectLocator
         var root = Path.GetDirectoryName(sharedItems);
         for (var level = 0; level < MaxSharedSearchLevels && root != null; level++)
         {
-            root = Path.GetDirectoryName(root);
+            var parent = Path.GetDirectoryName(root);
+            if (parent == null || !IsUnderRoot(parent, workspaceRoot))
+            {
+                break; // 워크스페이스 루트 위로는 훑지 않는다(디스크 전체 스캔과 밖의 프로젝트 선택을 막는다).
+            }
+            root = parent;
         }
+        var budget = new ScanBudget();
 
         ProjectArtifact? best = null;
         var bestTime = DateTime.MinValue;
         var sawProject = false;
-        foreach (var project in EnumerateProjectFiles(root, depth: 0))
+        foreach (var project in EnumerateProjectFiles(root, depth: 0, budget))
         {
             if (!ImportsSharedItems(project, sharedName))
             {
@@ -158,9 +173,15 @@ public static class ProjectLocator
         return null;
     }
 
-    private static IEnumerable<string> EnumerateProjectFiles(string? directory, int depth)
+    /// <summary>공유 프로젝트 탐색의 방문 폴더 수 상한(렌더마다 큰 디스크를 훑어 응답이 늦어지는 것을 막는다).</summary>
+    private sealed class ScanBudget
     {
-        if (directory == null)
+        public int RemainingDirectories = 3000;
+    }
+
+    private static IEnumerable<string> EnumerateProjectFiles(string? directory, int depth, ScanBudget budget)
+    {
+        if (directory == null || budget.RemainingDirectories-- <= 0)
         {
             yield break;
         }
@@ -195,13 +216,13 @@ public static class ProjectLocator
 
         foreach (var subdirectory in subdirectories.OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
-            if (SkippedDirectories.Contains(Path.GetFileName(subdirectory), StringComparer.OrdinalIgnoreCase))
+            if (SkippedDirectories.Contains(Path.GetFileName(subdirectory), StringComparer.OrdinalIgnoreCase) || IsReparsePoint(subdirectory))
             {
-                continue;
+                continue; // 건너뛸 폴더, 또는 링크(정션/심볼릭 링크: 밖의 큰 폴더나 순환으로 이어질 수 있다)
             }
             else
             {
-                foreach (var found in EnumerateProjectFiles(subdirectory, depth + 1))
+                foreach (var found in EnumerateProjectFiles(subdirectory, depth + 1, budget))
                 {
                     yield return found;
                 }
@@ -224,10 +245,37 @@ public static class ProjectLocator
         }
     }
 
-    private static string? FindNearestProjectFile(string xamlFilePath)
+    /// <summary>경로가 워크스페이스 루트 안(같은 폴더 포함)인가. 루트가 없으면 항상 true. 대소문자 무시, 구분자 정규화.</summary>
+    public static bool IsUnderRoot(string path, string? workspaceRoot)
+    {
+        if (string.IsNullOrEmpty(workspaceRoot))
+        {
+            return true;
+        }
+        else
+        {
+            var root = Path.GetFullPath(workspaceRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            return full.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static bool IsReparsePoint(string directory)
+    {
+        try
+        {
+            return (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return true; // 읽을 수 없으면 따라가지 않는다.
+        }
+    }
+
+    private static string? FindNearestProjectFile(string xamlFilePath, string? workspaceRoot)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(xamlFilePath));
-        for (var level = 0; level <= MaxProjectSearchLevels && directory != null; level++)
+        for (var level = 0; level <= MaxProjectSearchLevels && directory != null && IsUnderRoot(directory, workspaceRoot); level++)
         {
             try
             {

@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { t } from './i18n';
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { HitElement } from './hitTest';
@@ -80,6 +81,8 @@ export interface RenderParams {
     lang?: string;
     /** 호스트가 "프로젝트가 다시 빌드되어 호스트를 새로 띄워야 한다"(HostRestartRequired)고 답해도 되는가. {@link HostClient.renderLatest}가 자동으로 켜고 처리한다. */
     canRestart?: boolean;
+    /** 프로젝트(.csproj)/공유 프로젝트/산출물 탐색을 이 폴더 안으로 제한한다(열린 워크스페이스 폴더). 생략하면 제한 없음. */
+    workspaceRoot?: string;
 }
 
 /** 렌더는 성공했지만 사용자가 알아야 하는 변경/제한(제거한 x:Class, 자리표시자 등). 줄/열은 1-base, 없을 수 있다. */
@@ -312,6 +315,8 @@ export class HostClient {
         }
 
         const child = spawn(this._options.command, this._options.args, {
+            // 확장 호스트의 작업 폴더(워크스페이스일 수 있다)를 물려받지 않는다: 호스트 exe 폴더에서 시작한다.
+            cwd: path.dirname(this._options.command),
             env: { ...process.env, ...this._options.env },
             windowsHide: true,
             stdio: ['pipe', 'pipe', 'pipe'],

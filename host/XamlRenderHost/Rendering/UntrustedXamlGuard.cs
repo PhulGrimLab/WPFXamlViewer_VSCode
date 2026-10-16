@@ -29,7 +29,7 @@ internal static class UntrustedXamlGuard
     private static readonly HashSet<string> SafeCoreTypes = new(StringComparer.Ordinal)
     {
         "System.Object", "System.String", "System.Decimal", "System.DateTime", "System.DateTimeOffset", "System.TimeSpan", "System.Uri", "System.Guid",
-        "System.Math", "System.MathF", "System.Version", "System.Nullable`1",
+        "System.Math", "System.MathF", "System.Version", "System.Nullable`1", "System.Globalization.CultureInfo",
     };
 
     private static readonly string[] CoreAssemblyPrefixes = { "System.Private.CoreLib", "System.Runtime", "System.Collections", "System.Private.Uri" };
@@ -43,8 +43,24 @@ internal static class UntrustedXamlGuard
     /// <summary>값이 파일/네트워크 위치를 가리키면 거부하는 멤버 이름(이미지·글꼴·미디어·사전 등 "읽어 오는" 속성).</summary>
     private static readonly HashSet<string> LocationMembers = new(StringComparer.Ordinal)
     {
-        "Source", "UriSource", "ImageSource", "Uri", "BaseUri", "FontFamily", "Icon", "SoundLocation",
+        "Source", "UriSource", "ImageSource", "Uri", "BaseUri", "FontFamily", "Icon", "SoundLocation", "FontUri", "Cursor", "StreamSource",
     };
+
+    /// <summary>
+    /// 위치 검사에서 제외하는 멤버: 값이 주소여도 **읽어 오지 않는** 속성(하이퍼링크 대상 표시 등).
+    /// </summary>
+    private static readonly HashSet<string> NotLoadedMembers = new(StringComparer.Ordinal) { "NavigateUri" };
+
+    /// <summary>
+    /// 이 형식의 속성에 문자열을 넣으면 그 위치에서 파일/리소스를 읽어 오는가(`Uri`, `ImageSource`, `Cursor`, `FontFamily`, `Typeface`). 속성 **이름**이 아니라 **형식**으로도 판단해,
+    /// `Setter`의 `Value`나 처음 보는 이름의 속성으로 우회하지 못하게 한다.
+    /// </summary>
+    private static bool IsLoadingType(Type? type)
+    {
+        return type != null
+            && (typeof(Uri).IsAssignableFrom(type) || typeof(System.Windows.Media.ImageSource).IsAssignableFrom(type)
+                || type == typeof(System.Windows.Input.Cursor) || type == typeof(System.Windows.Media.FontFamily) || type == typeof(System.Windows.Media.Typeface));
+    }
 
     /// <summary>파일/네트워크 위치로 보이는 값: file:, http(s):, ftp:, UNC(\\host, //host), 드라이브 경로(C:\ 또는 C:/). pack://application 과 data: 는 허용한다.</summary>
     private static readonly Regex ExternalLocation = new(@"^\s*(file:|https?:|ftp:|\\\\|//|[A-Za-z]:[\\/])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -84,7 +100,8 @@ internal static class UntrustedXamlGuard
         var pending = new List<(string Prefix, string Ns)>();
         var objects = new Stack<XamlType>();
         string? currentMember = null;
-        var memberStack = new Stack<string?>();
+        Type? currentMemberType = null;
+        var memberStack = new Stack<(string? Name, Type? Type)>();
 
         while (reader.Read())
         {
@@ -104,8 +121,9 @@ internal static class UntrustedXamlGuard
                     pending.Clear();
                     frames.Push(scope);
                     objects.Push(reader.Type);
-                    memberStack.Push(currentMember);
+                    memberStack.Push((currentMember, currentMemberType));
                     currentMember = null;
+                    currentMemberType = null;
                     CheckType(reader.Type, lineInfo);
                     break;
                 }
@@ -113,18 +131,20 @@ internal static class UntrustedXamlGuard
                 case XamlNodeType.GetObject:
                     frames.Push(frames.Peek());
                     objects.Push(reader.Type ?? XamlLanguage.Object);
-                    memberStack.Push(currentMember);
+                    memberStack.Push((currentMember, currentMemberType));
                     currentMember = null;
+                    currentMemberType = null;
                     break;
 
                 case XamlNodeType.EndObject:
                     frames.Pop();
                     objects.Pop();
-                    currentMember = memberStack.Pop();
+                    (currentMember, currentMemberType) = memberStack.Pop();
                     break;
 
                 case XamlNodeType.StartMember:
                     currentMember = reader.Member.Name;
+                    currentMemberType = reader.Member.Type?.UnderlyingType;
                     if (reader.Member.IsDirective && BlockedDirectives.Contains(reader.Member.Name))
                     {
                         throw Blocked(lineInfo, $"x:{reader.Member.Name}");
@@ -138,7 +158,7 @@ internal static class UntrustedXamlGuard
                 case XamlNodeType.Value:
                     if (reader.Value is string value && objects.Count > 0)
                     {
-                        CheckValue(objects.Peek(), currentMember, value, frames.Peek(), reader.SchemaContext, lineInfo);
+                        CheckValue(objects.Peek(), currentMember, currentMemberType, value, frames.Peek(), reader.SchemaContext, lineInfo);
                     }
                     else
                     {
@@ -170,9 +190,11 @@ internal static class UntrustedXamlGuard
         }
     }
 
-    private static void CheckValue(XamlType owner, string? member, string value, IReadOnlyDictionary<string, string> namespaces, XamlSchemaContext context, IXamlLineInfo lineInfo)
+    private static void CheckValue(XamlType owner, string? member, Type? memberType, string value, IReadOnlyDictionary<string, string> namespaces, XamlSchemaContext context, IXamlLineInfo lineInfo)
     {
-        if (member != null && LocationMembers.Contains(member) && ExternalLocation.IsMatch(value))
+        // 멤버 이름(Source 등), 일반 값 멤버(`Setter.Value` 등 무엇이든 들어갈 수 있는 곳), 또는 위치를 읽어 오는 **형식**의 멤버이면 외부 위치를 거부한다.
+        if (member != null && !NotLoadedMembers.Contains(member) && ExternalLocation.IsMatch(value)
+            && (LocationMembers.Contains(member) || member == "Value" || IsLoadingType(memberType)))
         {
             throw Blocked(lineInfo, Loc.T($"{member}=\"{Truncate(value)}\" (파일/네트워크 위치)", $"{member}=\"{Truncate(value)}\" (file/network location)"));
         }

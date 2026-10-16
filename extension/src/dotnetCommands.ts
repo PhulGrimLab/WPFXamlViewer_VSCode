@@ -114,6 +114,13 @@ export function buildDotnetArgs(action: DotnetAction, targetPath: string, config
     }
 }
 
+/** 호스트(`StringComparer.OrdinalIgnoreCase`)와 같은 규칙의 정렬: 같은 폴더에 .csproj가 여럿일 때 빌드 대상과 로드 대상이 같은 파일이 되게 한다(localeCompare는 언어마다 순서가 다르다). */
+export function compareOrdinalIgnoreCase(a: string, b: string): number {
+    const x = a.toUpperCase();
+    const y = b.toUpperCase();
+    return x < y ? -1 : x > y ? 1 : 0;
+}
+
 /**
  * XAML 파일에서 위로 올라가며 가장 가까운 `.csproj`를 찾는다(같은 폴더에 여러 개면 이름순 첫 번째).
  * 못 찾으면 undefined. 파일 시스템 접근은 인자로 받아 테스트에서 바꿀 수 있다.
@@ -130,7 +137,7 @@ export function findNearestProject(
         } catch {
             // 읽을 수 없는 폴더: 위로 계속.
         }
-        const projects = entries.filter((e) => e.toLowerCase().endsWith('.csproj')).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+        const projects = entries.filter((e) => e.toLowerCase().endsWith('.csproj')).sort(compareOrdinalIgnoreCase);
         if (projects.length > 0) {
             return path.join(directory, projects[0]);
         } else {

@@ -186,6 +186,24 @@ public class UserProjectTests
     }
 
     [TestMethod]
+    public void T07a_Locator_WithWorkspaceRoot_NeverLooksOutsideIt()
+    {
+        // 저장소의 하위 폴더만 열었을 때(워크스페이스 루트 = Views): 위쪽 폴더의 .csproj와 그 bin의 DLL은 루트 밖이라 찾지 않는다.
+        using var project = UserProjectFixture.Create();
+        var views = Path.Combine(project.Directory, "Views");
+        Directory.CreateDirectory(views);
+        var xaml = Path.Combine(views, "A.xaml");
+        File.WriteAllText(xaml, "<Grid/>");
+
+        Assert.AreEqual(ProjectLookupReasons.Found, ProjectLocator.Find(xaml).Reason, "경계가 없으면 위쪽 프로젝트를 찾는다(기존 동작)");
+        Assert.AreEqual(ProjectLookupReasons.Found, ProjectLocator.Find(xaml, project.Directory).Reason, "프로젝트 폴더를 루트로 열면 찾는다");
+        Assert.AreEqual(ProjectLookupReasons.NoProject, ProjectLocator.Find(xaml, views).Reason, "루트가 Views뿐이면 위쪽 프로젝트는 루트 밖이다");
+        Assert.IsTrue(ProjectLocator.IsUnderRoot(xaml, views));
+        Assert.IsFalse(ProjectLocator.IsUnderRoot(project.Directory, views));
+        Assert.IsFalse(ProjectLocator.IsUnderRoot(views + "-other", views), "이름이 접두사만 같은 형제 폴더는 안이 아니다");
+    }
+
+    [TestMethod]
     public void T07b_Locator_FallsBackToExeWhenNoDll()
     {
         // WPF 앱 프로젝트(WinExe)는 <AssemblyName>.exe만 나온다. DLL이 없을 때만 EXE를 쓰고, 둘 다 있으면 DLL이 우선이다.

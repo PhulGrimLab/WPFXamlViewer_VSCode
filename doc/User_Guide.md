@@ -33,6 +33,7 @@
 | `wpfXamlViewer.openPreview` | WPF XAML: Open Preview | 활성 `.xaml` 파일을 에디터 옆 패널에 미리보기한다. `.xaml`이 아니면 안내만 한다. |
 | `wpfXamlViewer.buildProject` | WPF XAML: 프로젝트 빌드 | 탐색기에서 `.csproj`/`.sln`/`.slnx`를 **우클릭 → 프로젝트 빌드**. 그 프로젝트만 `dotnet build`를 실행한다(아래 "프로젝트 빌드/정리"). |
 | `wpfXamlViewer.switchLanguage` | WPF XAML: 언어 전환 (한국어 / English) | 확장의 표시 언어를 **자동 / 한국어 / English** 중에서 고른다(설정 `wpfXamlViewer.language`에 저장). 상태 표시줄, 알림, 미리보기 도구 모음, 호스트 경고 문구가 바로 바뀐다. |
+| `wpfXamlViewer.resetProjectConsent` | WPF XAML: 프로젝트 코드 실행 허용 초기화 | 프로젝트별로 허용한 "프로젝트 코드 실행" 기록을 모두 지운다. 다음 미리보기 때 다시 확인한다(5절). |
 | `wpfXamlViewer.rebuildProject` | WPF XAML: 프로젝트 다시 빌드 | `.csproj` 우클릭. `dotnet build --no-incremental`. |
 | `wpfXamlViewer.cleanProject` | WPF XAML: 프로젝트 정리 | `.csproj`/`.sln` 우클릭. `dotnet clean`. |
 | `wpfXamlViewer.restoreProject` | WPF XAML: 프로젝트 복원 | `.csproj` 우클릭. `dotnet restore`. |
@@ -79,24 +80,31 @@ XAML에 프로젝트의 사용자 컨트롤(`xmlns:local="clr-namespace:MyApp"`)
 
 | 방식 | 조건 | 결과 |
 |---|---|---|
-| **Tier 1 (실제 렌더)** | 폴더를 **신뢰**했고, 가장 가까운 `.csproj`의 `bin/**/<AssemblyName>.dll` 빌드 산출물이 있음(없으면 앱 프로젝트의 `<AssemblyName>.exe`) | 프로젝트 DLL을 불러와 컨트롤을 실제로 만들어 그린다 |
+| **Tier 1 (실제 렌더)** | 폴더를 **신뢰**했고, XAML과 가장 가까운 `.csproj`가 **열린 워크스페이스 폴더 안**에 있고, 그 프로젝트의 코드 실행을 **허용**했고(아래), 그 `.csproj`의 `bin/**/<AssemblyName>.dll` 빌드 산출물이 있음(없으면 앱 프로젝트의 `<AssemblyName>.exe`) | 프로젝트 DLL을 불러와 컨트롤을 실제로 만들어 그린다 |
 | **Tier 0 (자리표시자)** | 폴더를 신뢰하지 않았거나, 빌드 산출물이 없거나, 로드에 실패 | 사용자 컨트롤을 타입 이름이 적힌 붉은 박스로 표시하고 나머지는 정상 렌더 |
 
-- 산출물이 여러 개(구성/TFM별)이면 **수정 시각이 가장 최신인 DLL**을 쓴다. 이 확장은 빌드하지 않는다.
+- 산출물이 여러 개(구성/TFM별)이면 **수정 시각이 가장 최신인 DLL**을 쓴다. 산출물이 없으면 설정 `autoBuildOnPreview`(기본 켜짐)에 따라 **자동으로 빌드**한 뒤 다시 그린다(허용한 프로젝트만).
 - DLL은 임시 폴더로 복사해서 불러오므로 **원본이 잠기지 않는다**(미리보기 중에도 `dotnet build` 가능). DLL이 바뀌면 자동으로 다시 불러온다.
 - 컨트롤 생성자가 예외를 던지면 그 컨트롤만 **주황색 오류 박스**(예외 요약)로 바뀌고 나머지는 그려진다.
 - 컨트롤 안에서 `DesignerProperties.GetIsInDesignMode`로 분기하는 코드는 디자인 모드(`true`)로 동작한다.
 - `App.xaml`의 `Application.Resources`(병합 사전 포함)가 문서의 리소스 아래 단계로 자동 적용되어 `{StaticResource}`가 풀린다.
 
 ### 보안 — 반드시 읽어 주세요
-Tier 1은 프로젝트의 **사용자 코드(생성자 등)를 이 PC에서 그대로 실행**한다. 샌드박스는 없다. 그래서 **신뢰하는 폴더에서만** 켜진다
-(VS Code의 Workspace Trust). 신뢰하지 않은 폴더에서는 사용자 코드를 절대 불러오지 않는다. 생성자에서 파일/네트워크/DB에 접근하는 컨트롤은
+Tier 1은 프로젝트의 **사용자 코드(생성자 등)를 이 PC에서 그대로 실행**한다. 샌드박스는 없다. 그래서 다음을 **모두** 만족할 때만 켜진다.
+1. **신뢰하는 폴더**(VS Code의 Workspace Trust). 폴더 없이 파일만 연 창은 VS Code가 기본으로 "신뢰됨"으로 보지만, 아래 2번 때문에 프로젝트 코드는 실행되지 않는다.
+2. **XAML과 `.csproj`가 열린 워크스페이스 폴더 안**에 있다(저장소의 하위 폴더만 열었다면 위쪽 폴더의 프로젝트는 실행하지 않는다). 호스트도 같은 경계를 지켜 그 밖의 `.csproj`/`bin`을 찾지 않는다.
+3. **프로젝트별 허용**: 처음 미리보기할 때 "이 프로젝트의 코드를 실행해도 됩니까?"를 한 번 묻고 워크스페이스에 기억한다. 신뢰한 폴더라도 **저장소에 커밋된 `bin/`의 DLL은 빌드 없이도 .xaml을 여는 순간 실행**될 수 있기 때문이다. 출처를 아는 프로젝트만 허용하세요. 기록은 명령 **WPF XAML: 프로젝트 코드 실행 허용 초기화**로 지운다.
+
+신뢰하지 않은 폴더나 허용하지 않은 프로젝트에서는 사용자 코드를 불러오지 않는다(Tier 0). 생성자에서 파일/네트워크/DB에 접근하는 컨트롤은
 미리보기 때도 그 동작이 실행되며, 느리거나 그려지지 않을 수 있다. 요청이 제한 시간(기본 30초; 출력 폴더가 큰 프로젝트는 처음 한 번 불러오는 데 수 초가 걸린다) 안에 끝나지 않으면 호스트를 강제 종료하고 다음 편집 때 다시 시작한다.
 
-**신뢰하지 않은 폴더에서도 지켜지는 것**(자동 테스트 `RD07`~`RD09`, `S01`~`S04`, `T02`, `T09b`로 확인):
+**신뢰하지 않은 폴더에서도 지켜지는 것**(자동 테스트 `RD07`~`RD09`, `S01`~`S04`, `T02`, `T09b`, `G01`~`G09`로 확인):
+- **XAML 선언만으로 코드가 실행되지 않는다**: 파싱 전에 허용 목록 검사를 한다. WPF 형식과 기본 값 형식(문자열/숫자/열거형/컬렉션 등)만 만들 수 있고, `ObjectDataProvider`, `XmlDataProvider`, `x:FactoryMethod`, WPF 밖 형식의 `{x:Static}`, 파일/네트워크 위치(`file:`, UNC, 드라이브 경로, `http(s):`)를 읽어 오는 `Source`·`FontFamily`·`Cursor` 등은 `UntrustedBlocked` 오류로 거부한다. 폴더를 신뢰하면 그려진다. 완전한 샌드박스는 아니다.
 - `ResourceDictionary Source`와 `App.xaml` 탐색은 **프로젝트 경계**(가장 가까운 `.csproj`/`.sln`/`.slnx`/`.git`이 있는 폴더, 없으면 문서 폴더) 안의 파일만 읽는다. 절대 경로(`C:\…`), 경계를 벗어나는 `..\`, 경계 안이라도 정션/심볼릭 링크를 지나는 경로는 읽지 않는다(경고 `DictionaryUnavailable`).
 - 프로젝트 DLL을 로드하지 않고(Tier 0), 앞서 신뢰된 렌더가 올려 둔 `Application.Resources`와 로드된 사용자 어셈블리의 이름 해석도 쓰지 못한다(같은 프로세스에서 신뢰 상태가 바뀌는 경우의 심층 방어).
 - 프로젝트 파일(`.csproj`)의 `AssemblyName`과 XAML이 준 어셈블리 이름은 위험 문자(따옴표, 꺾쇠, `;`, 경로 구분자 등)가 있으면 쓰지 않고, 프로젝트 파일의 DTD는 처리하지 않는다.
+
+**네트워크**: 확장 자체는 네트워크로 아무것도 보내지 않는다. 다만 자동 빌드의 `dotnet`은 NuGet 복원(nuget.org 등)과 .NET CLI 텔레메트리 통신을 할 수 있고(`DOTNET_CLI_TELEMETRY_OPTOUT=1`로 끈다), Tier 1 사용자 코드는 무엇이든 할 수 있다.
 
 **남은 위험(신뢰된 폴더)**: 신뢰한 폴더에서는 프로젝트의 DLL 코드가 이 PC에서 그대로 실행된다(샌드박스 없음). 미리 로드할 때는 출력 폴더의 관리 DLL을 **모두** 로드하므로 프로젝트가 참조하지 않는 DLL의 로드 시점 코드도 실행될 수 있다. 신뢰는 직접 만들었거나 검토한 폴더에만 주세요.
 

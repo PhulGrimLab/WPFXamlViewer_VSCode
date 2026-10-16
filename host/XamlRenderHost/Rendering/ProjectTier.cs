@@ -24,7 +24,7 @@ public static class ProjectTier
     /// 신뢰(allow)가 있고 파일 경로로 산출물을 찾아 로드에 성공하면 Tier 1, 아니면 Tier 0과 그 이유.
     /// 신뢰 판단은 호출자(확장: Workspace Trust)가 하고 호스트는 그 결과만 따른다 — 신뢰 없이는 사용자 코드를 절대 로드하지 않는다.
     /// </summary>
-    public static ProjectTierInfo Resolve(bool allowProjectAssemblies, string? filePath, bool allowHostRestart = false)
+    public static ProjectTierInfo Resolve(bool allowProjectAssemblies, string? filePath, bool allowHostRestart = false, string? workspaceRoot = null)
     {
         if (!allowProjectAssemblies)
         {
@@ -39,7 +39,7 @@ public static class ProjectTier
             // 신뢰 + 경로 있음: 산출물 탐색.
         }
 
-        var lookup = ProjectLocator.Find(filePath);
+        var lookup = ProjectLocator.Find(filePath, workspaceRoot);
         if (lookup.Artifact == null)
         {
             return new ProjectTierInfo(0, lookup.Reason);

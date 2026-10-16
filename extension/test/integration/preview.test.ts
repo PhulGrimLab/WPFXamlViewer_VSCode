@@ -75,6 +75,8 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
 
     it('I-10 신뢰된 워크스페이스: 프로젝트 DLL의 사용자 컨트롤이 실제로 그려진다(Tier 1)', async () => {
         const xamlPath = process.env.XAMLVIEWER_TEST_USERPROJECT_XAML as string;
+        // 프로젝트 코드 실행은 프로젝트별로 사용자가 허용해야 한다(테스트는 허용 기록을 미리 넣는다).
+        await api.grantProjectConsent(path.join(path.dirname(xamlPath), 'SampleControls.csproj'));
         const doc = await vscode.workspace.openTextDocument(xamlPath);
         assert.ok(vscode.workspace.isTrusted, '이 실행은 --disable-workspace-trust 이므로 신뢰 상태여야 한다');
         await vscode.window.showTextDocument(doc);
@@ -98,6 +100,7 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         const csproj = '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><AssemblyName>SampleControls</AssemblyName></PropertyGroup></Project>';
         const project = createUserProject(workspace, 'AutoBuildOk',
             '<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:s="clr-namespace:SampleControls;assembly=SampleControls"><s:RedBox/></StackPanel>', false, csproj);
+        await api.grantProjectConsent(path.join(project.dir, 'SampleControls.csproj'));
         const rendersBefore = api.getPreviewState().renderCount;
         await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(project.xamlPath));
         await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
@@ -114,6 +117,7 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         const project = createUserProject(workspace, 'AutoBuildFail',
             '<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:s="clr-namespace:SampleControls;assembly=SampleControls"><s:RedBox/></StackPanel>', false);
         await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(project.xamlPath));
+        await api.grantProjectConsent(path.join(project.dir, 'SampleControls.csproj'));
         const startsBefore = api.getLogLines().filter((l) => l.includes('autoBuild start')).length;
         await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
         await waitUntil(() => api.getLogLines().filter((l) => l.includes('autoBuild end ok=false')).length >= 1, 120000);
@@ -146,6 +150,27 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         // auto: VS Code 표시 언어를 따른다(한국어면 한국어, 아니면 영어).
         const expected = vscode.env.language.toLowerCase().startsWith('ko') ? 'ko' : 'en';
         await waitUntil(() => getLanguage() === expected);
+    });
+
+    it('I-14 프로젝트 코드 실행은 사용자가 허용하기 전에는 하지 않고(빌드된 DLL이 있어도), 허용하면 그린다', async () => {
+        const workspace = process.env.XAMLVIEWER_TEST_WORKSPACE as string;
+        const xaml = '<StackPanel xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:s="clr-namespace:SampleControls;assembly=SampleControls"><s:RedBox/></StackPanel>';
+        const project = createUserProject(workspace, 'ConsentGate', xaml); // 빌드된 DLL이 이미 있다(저장소에 커밋된 bin처럼)
+        const hostLoadsBefore = api.getLogLines().filter((l) => l.includes('H020')).length;
+        await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(project.xamlPath));
+        const before = api.getPreviewState().renderCount;
+        await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
+        await waitUntil(() => api.getPreviewState().renderCount > before);
+        // 허용 전: 사용자 컨트롤(폭 40)이 실제로 만들어지면 안 된다(자리표시자라 폭이 다르다).
+        assert.notStrictEqual(api.getPreviewState().lastImageSize?.width, 40, '허용 전에는 프로젝트 DLL을 불러오면 안 된다');
+
+        await api.grantProjectConsent(path.join(project.dir, 'SampleControls.csproj'));
+        const afterDeny = api.getPreviewState().renderCount;
+        await vscode.commands.executeCommand(COMMAND_OPEN_PREVIEW);
+        await waitUntil(() => api.getPreviewState().renderCount > afterDeny);
+        await waitUntil(() => api.getPreviewState().lastImageSize?.width === 40);
+        assert.ok(hostLoadsBefore >= 0);
+        editor = await vscode.window.showTextDocument(editor.document);
     });
 
     /** M5 시험용: 여러 요소가 있는 XAML을 워크스페이스에 만들어 열고 미리보기를 렌더한 뒤 요소 수가 채워질 때까지 기다린다. */

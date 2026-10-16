@@ -66,6 +66,25 @@ public class UntrustedGuardTests
     }
 
     [TestMethod]
+    public void G04b_LocationCheck_AppliesByTypeAndGenericValueMembers_NotJustByName()
+    {
+        // 멤버 이름이 Source가 아니어도(Setter.Value, 글꼴 파일 Uri, 커서 파일) 위치를 읽어 오는 값은 막는다.
+        RenderBlocked($"<Grid {Ns}><Grid.Resources><Style TargetType=\"Image\"><Setter Property=\"Source\" Value=\"https://example.invalid/a.png\"/></Style></Grid.Resources></Grid>");
+        RenderBlocked($"<Glyphs {Ns} FontUri=\"https://example.invalid/a.ttf\" UnicodeString=\"A\" FontRenderingEmSize=\"12\"/>");
+        RenderBlocked($"<Border {Ns} Cursor=\"C:/Windows/Cursors/aero_arrow.cur\"/>");
+    }
+
+    [TestMethod]
+    public void G04c_DisplayOnlyAddresses_AreNotBlocked()
+    {
+        // 표시만 하는 값(텍스트, 하이퍼링크 대상)은 주소처럼 생겨도 읽어 오지 않으므로 막지 않는다. CultureInfo는 StringFormat/ConverterCulture에 흔히 쓴다.
+        var xaml = $"<StackPanel {Ns} xmlns:g=\"clr-namespace:System.Globalization;assembly=System.Runtime\" Width=\"200\">"
+            + "<TextBlock Text=\"C:/temp/report.txt\"/><TextBlock><Hyperlink NavigateUri=\"https://example.com\">link</Hyperlink></TextBlock>"
+            + "<TextBlock Text=\"{Binding Path=Name, ConverterCulture={x:Static g:CultureInfo.InvariantCulture}}\"/></StackPanel>";
+        Assert.AreEqual(200, RenderTestHelper.Render(xaml).PixelWidth);
+    }
+
+    [TestMethod]
     public void G05_CommonWpfXaml_StillRenders()
     {
         var xaml = $"<Grid {Ns} Width=\"120\" Height=\"60\"><Grid.Resources><Style x:Key=\"S\" TargetType=\"{{x:Type Button}}\"><Setter Property=\"Margin\" Value=\"4\"/></Style></Grid.Resources>"

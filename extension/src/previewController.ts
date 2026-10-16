@@ -1,5 +1,6 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { AutoBuildState, MissingBuildAction, WARNING_PROJECT_TIER0, decideMissingBuild, describeMissingBuild } from './autoBuild';
 import { CONFIG_AUTO_BUILD, CONFIG_AUTO_OPEN, CONFIG_SECTION, PREVIEW_VIEW_TYPE, RENDER_DEBOUNCE_MS } from './constants';
@@ -11,6 +12,7 @@ import { HostClient, HostRequestError, LogFn, RenderWarning } from './hostClient
 import { getLanguage, t } from './i18n';
 import { LogId } from './logFormat';
 import { buildProjectAndWait } from './projectBuild';
+import { ProjectConsent } from './projectConsent';
 import { canRunProjectCode } from './workspaceTrust';
 import { buildPreviewHtml } from './previewHtml';
 import { Background, ToWebviewMessage, parseFromWebview } from './previewMessages';
@@ -58,7 +60,10 @@ export class PreviewController implements vscode.Disposable {
     /** 이미 알림을 띄운 (상태, 문서) 조합. 편집할 때마다 같은 알림이 반복되지 않게 한다. */
     private readonly _notified = new Set<string>();
 
-    constructor(private readonly _client: HostClient, private readonly _log: LogFn = () => undefined) {
+    /** 이번 세션에 이미 허용 여부를 물은 프로젝트 키(같은 질문을 반복하지 않는다. 거절하면 다시 열 때까지 조용히 Tier 0로 그린다). */
+    private readonly _consentAsked = new Set<string>();
+
+    constructor(private readonly _client: HostClient, private readonly _log: LogFn = () => undefined, private readonly _consent: ProjectConsent = new ProjectConsent({ get: (_k, d) => d, update: () => Promise.resolve() })) {
         this._subscriptions.push(
             vscode.workspace.onDidChangeTextDocument((e) => {
                 if (e.document === this._document) {
@@ -291,14 +296,17 @@ export class PreviewController implements vscode.Disposable {
             // 렌더 대상 있음.
         }
 
+        const gate = this._projectGate(document);
         this._setStatus(t('preview.rendering'), undefined);
         this._post({ type: 'busy' });
+        this._askConsentIfNeeded(gate);
         this._client.renderLatest({
             lang: getLanguage(),
             xaml: document.getText(),
             filePath: document.uri.scheme === 'file' ? document.uri.fsPath : undefined,
             // 사용자 코드를 실행하는 Tier 1은 신뢰된 워크스페이스에서만 허용한다(doc/01 3.3 규칙 1).
-            allowProjectAssemblies: canRunProjectCode(document.uri.scheme === 'file' ? document.uri.fsPath : undefined),
+            allowProjectAssemblies: gate.allow,
+            workspaceRoot: gate.workspaceRoot,
             width: this._size.width,
             height: this._size.height,
         }).then(
@@ -396,11 +404,96 @@ export class PreviewController implements vscode.Disposable {
             reason,
             needed,
             autoBuildEnabled: vscode.workspace.getConfiguration(CONFIG_SECTION).get<boolean>(CONFIG_AUTO_BUILD, true),
-            // 신뢰된 워크스페이스이면서 XAML과 프로젝트가 모두 열린 폴더 안에 있을 때만 자동 빌드한다(폴더 없는 창의 파일로 위쪽 .csproj가 빌드되는 것을 막는다).
-            trusted: canRunProjectCode(document.uri.scheme === 'file' ? document.uri.fsPath : undefined) && canRunProjectCode(project),
+            // 신뢰된 워크스페이스이고 XAML과 프로젝트가 모두 열린 폴더 안에 있으며 사용자가 이 프로젝트의 코드 실행을 허용했을 때만 자동 빌드한다.
+            trusted: this._projectGate(document).allow,
             project,
             state: project ? this._autoBuild.get(project) : undefined,
         });
+    }
+
+    /**
+     * 이 문서의 프로젝트 코드(빌드/DLL 로드)를 실행해도 되는가. 모두 만족해야 한다: ① 신뢰된 워크스페이스이고 XAML이 열린 폴더 안에 있다 ② 가장 가까운 .csproj도 열린 폴더 안에 있다
+     * (하위 폴더만 열었을 때 위쪽 폴더의 프로젝트 DLL이 실행되는 것을 막는다) ③ 사용자가 이 프로젝트(.csproj, 없으면 공유 프로젝트가 있는 워크스페이스 폴더)의 코드 실행을 허용했다.
+     * `needsConsent`가 true면 ①②는 통과했고 ③만 남은 상태다(허용을 물어야 한다).
+     */
+    private _projectGate(document: vscode.TextDocument): { allow: boolean; needsConsent: boolean; key?: string; workspaceRoot?: string } {
+        const file = document.uri.scheme === 'file' ? document.uri.fsPath : undefined;
+        if (!file || !canRunProjectCode(file)) {
+            return { allow: false, needsConsent: false };
+        } else {
+            // 신뢰된 폴더 안의 파일.
+        }
+        const workspaceRoot = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath;
+        const project = this._projectOf(document);
+        if (project && !canRunProjectCode(project)) {
+            return { allow: false, needsConsent: false, workspaceRoot }; // 프로젝트가 열린 폴더 밖이다.
+        } else {
+            // 프로젝트가 없거나 폴더 안에 있다.
+        }
+        // 프로젝트가 없어도 공유 프로젝트(.projitems)에 속한 XAML이면 그것을 가져가는 앱 프로젝트가 대상이라 워크스페이스 폴더를 키로 허용을 받는다.
+        const key = project ?? (workspaceRoot && this._hasSharedProject(file) ? workspaceRoot : undefined);
+        if (!key) {
+            return { allow: false, needsConsent: false, workspaceRoot }; // 로드할 프로젝트가 없다(일반 렌더).
+        } else if (!this._consent.isGranted(key)) {
+            return { allow: false, needsConsent: true, key, workspaceRoot };
+        } else {
+            return { allow: true, needsConsent: false, key, workspaceRoot };
+        }
+    }
+
+    /** XAML 폴더에서 위로 3단계 안에 `.projitems`(공유 프로젝트)가 있는가. */
+    private _hasSharedProject(xamlPath: string): boolean {
+        let directory = path.dirname(xamlPath);
+        for (let level = 0; level <= 3; level++) {
+            try {
+                if (fs.readdirSync(directory).some((entry) => entry.toLowerCase().endsWith('.projitems'))) {
+                    return true;
+                } else {
+                    // 이 폴더에는 없다.
+                }
+            } catch {
+                // 읽을 수 없는 폴더: 위로 계속.
+            }
+            const parent = path.dirname(directory);
+            if (parent === directory) {
+                break;
+            } else {
+                directory = parent;
+            }
+        }
+        return false;
+    }
+
+    /** 허용이 필요한 프로젝트를 이번 세션에 아직 묻지 않았으면 한 번 묻는다. 허용하면 기록하고 다시 그린다. 거절하면 이번 세션에는 다시 묻지 않는다. */
+    private _askConsentIfNeeded(gate: { needsConsent: boolean; key?: string }): void {
+        const key = gate.key;
+        if (!gate.needsConsent || !key || this._consentAsked.has(key)) {
+            return;
+        } else {
+            this._consentAsked.add(key);
+        }
+        const allow = t('consent.allow');
+        void vscode.window.showWarningMessage(t('consent.ask', path.basename(key)), { modal: false }, allow, t('consent.deny')).then(async (choice) => {
+            if (choice === allow) {
+                await this._consent.grant(key);
+                this._renderNow();
+            } else {
+                this._setStatus(t('consent.denied'), undefined);
+            }
+        });
+    }
+
+    /** 테스트용: 이 프로젝트(또는 워크스페이스 폴더)의 코드 실행을 허용한 것으로 기록한다. */
+    async grantConsent(key: string): Promise<void> {
+        await this._consent.grant(key);
+    }
+
+    /** 모든 허용 기록을 지우고 이번 세션의 질문 기록도 비운다(명령 "프로젝트 코드 실행 허용 초기화"). */
+    async resetConsent(): Promise<void> {
+        await this._consent.clear();
+        this._consentAsked.clear();
+        void vscode.window.showInformationMessage(t('consent.reset'));
+        this._renderNow();
     }
 
     private _projectOf(document: vscode.TextDocument): string | undefined {
