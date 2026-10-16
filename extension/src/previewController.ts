@@ -21,6 +21,9 @@ import { DOTNET_DESKTOP_RUNTIME_URL, dotNetRuntimeMissingMessage, isDotNetRuntim
 /** 진단/상태 표시에 쓰는 출처 이름. */
 const DIAGNOSTIC_SOURCE = 'WPF XAML Live Preview';
 
+/** 폴더별 프로젝트 조회 캐시 유효 시간(ms). */
+const PROJECT_CACHE_MS = 3000;
+
 /** 웹뷰 nonce 길이(바이트). */
 const NONCE_BYTES = 16;
 
@@ -496,8 +499,26 @@ export class PreviewController implements vscode.Disposable {
         this._renderNow();
     }
 
+    /** 폴더별 "가장 가까운 .csproj" 조회 결과 캐시. 렌더마다(키 입력 뒤 디바운스마다) 여러 번 불리는데 매번 최대 12단계 폴더를 동기로 읽지 않게 한다. */
+    private readonly _projectCache = new Map<string, { project: string | undefined; at: number }>();
+
     private _projectOf(document: vscode.TextDocument): string | undefined {
-        return document.uri.scheme === 'file' ? findNearestProject(document.uri.fsPath, (directory) => fs.readdirSync(directory)) : undefined;
+        if (document.uri.scheme !== 'file') {
+            return undefined;
+        } else {
+            // 파일 문서: 캐시 확인.
+        }
+        const directory = path.dirname(document.uri.fsPath);
+        const now = Date.now();
+        const cached = this._projectCache.get(directory);
+        if (cached && now - cached.at < PROJECT_CACHE_MS) {
+            return cached.project;
+        } else {
+            // 없거나 오래됨: 다시 찾는다(새 .csproj를 만든 경우도 잠시 뒤 반영된다).
+        }
+        const project = findNearestProject(document.uri.fsPath, (dir) => fs.readdirSync(dir));
+        this._projectCache.set(directory, { project, at: now });
+        return project;
     }
 
     /** 결정에 따라 빌드를 시작하거나 안내를 표시한다. `failed`: 이번 렌더가 실패했는가(오류 화면을 이미 띄웠다). */

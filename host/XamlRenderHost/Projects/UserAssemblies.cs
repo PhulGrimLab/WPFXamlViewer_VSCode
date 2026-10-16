@@ -179,7 +179,7 @@ public sealed class UserAssemblies
         };
 
         /// <summary>호스트의 공유 프레임워크에 같은 이름의 어셈블리가 있는가.</summary>
-        private static bool IsHostFrameworkAssembly(string? simpleName)
+        internal static bool IsHostFrameworkAssembly(string? simpleName)
             => !string.IsNullOrEmpty(simpleName)
                 && ProjectLocator.IsSafeAssemblyName(simpleName)
                 && HostFrameworkDirectories.Any(dir => dir.Length > 0 && File.Exists(Path.Combine(dir, simpleName + ".dll")));
@@ -529,6 +529,17 @@ public sealed class UserAssemblies
     /// deps.json이 없는 출력(.NET Framework)은 어셈블리를 폴더 바로 아래에서만 찾으므로, 폴더 바로 아래 파일과 위성 어셈블리만 복사한다.
     /// 이렇게 하지 않으면 앱이 같이 싣는 런타임/스크립트(예: Python 런타임 100MB)까지 복사해 첫 렌더가 느려진다.
     /// </summary>
+    /// <summary>
+    /// 출력 폴더 **바로 아래**의 DLL이 호스트의 공유 프레임워크(런타임 + WPF)에 있는 것과 같은 이름인가. 자체 포함(self-contained) 출력은 프레임워크 DLL 수백 개(PathDock 기준 145MB 중 137MB)를 담는데,
+    /// 사용자 컨텍스트는 그것을 로드하지 않고 호스트의 기본 컨텍스트 것을 쓰므로(`UserLoadContext.Load`) 복사하지 않아도 동작이 같다. 복사를 건너뛰면 첫 로드의 디스크 I/O와 %TEMP% 사용량이 크게 준다.
+    /// </summary>
+    private static bool IsFrameworkCopyAtTopLevel(string sourceDirectory, string file)
+    {
+        return string.Equals(Path.GetDirectoryName(file), sourceDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Path.GetExtension(file), ".dll", StringComparison.OrdinalIgnoreCase)
+            && UserLoadContext.IsHostFrameworkAssembly(Path.GetFileNameWithoutExtension(file));
+    }
+
     private static string CopyOutputDirectory(string sourceDirectory)
     {
         var target = Path.Combine(Path.GetTempPath(), TempDirectoryPrefix + Environment.ProcessId + "-" + Guid.NewGuid().ToString("N"));
@@ -542,6 +553,14 @@ public sealed class UserAssemblies
             }
             foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
             {
+                if (IsFrameworkCopyAtTopLevel(sourceDirectory, file))
+                {
+                    continue; // 자체 포함 출력의 프레임워크 복사본(수백 MB): 로드하지 않고 호스트의 것을 쓰므로 복사할 필요가 없다.
+                }
+                else
+                {
+                    // 앱/라이브러리/리소스 파일: 복사.
+                }
                 File.Copy(file, Path.Combine(target, Path.GetRelativePath(sourceDirectory, file)), overwrite: true);
             }
         }

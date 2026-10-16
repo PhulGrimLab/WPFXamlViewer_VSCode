@@ -186,6 +186,25 @@ public class UserProjectTests
     }
 
     [TestMethod]
+    public void T06c_TempCopy_SkipsFrameworkDuplicates_ButKeepsAppFiles_AndStillRenders()
+    {
+        // 자체 포함 출력처럼 출력 폴더에 프레임워크 DLL 이름의 파일이 있어도(여기서는 쓸 수 없는 가짜 파일) 복사/로드하지 않고, 앱 DLL은 정상적으로 불러와 그린다.
+        using var project = UserProjectFixture.Create();
+        var outputDirectory = Path.GetDirectoryName(project.DllPath)!;
+        File.WriteAllText(Path.Combine(outputDirectory, "System.Collections.dll"), "not a real assembly");
+        var method = typeof(UserAssemblies).GetMethod("IsFrameworkCopyAtTopLevel", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        bool Skips(string file) => (bool)method.Invoke(null, [outputDirectory, file])!;
+
+        Assert.IsTrue(Skips(Path.Combine(outputDirectory, "System.Collections.dll")), "호스트 프레임워크에 있는 이름은 복사하지 않는다");
+        Assert.IsFalse(Skips(project.DllPath), "앱 DLL은 복사한다");
+        Assert.IsFalse(Skips(Path.Combine(outputDirectory, "Some.Library.dll")), "프레임워크에 없는 이름은 복사한다");
+        Assert.IsFalse(Skips(Path.Combine(outputDirectory, "sub", "System.Collections.dll")), "하위 폴더의 파일은 건드리지 않는다");
+
+        var result = Render(project, Xaml("<s:RedBox/>"));
+        Assert.AreEqual(40, result.PixelWidth, "가짜 프레임워크 파일이 있어도 사용자 컨트롤이 그려져야 한다");
+    }
+
+    [TestMethod]
     public void T07a_Locator_WithWorkspaceRoot_NeverLooksOutsideIt()
     {
         // 저장소의 하위 폴더만 열었을 때(워크스페이스 루트 = Views): 위쪽 폴더의 .csproj와 그 bin의 DLL은 루트 밖이라 찾지 않는다.
