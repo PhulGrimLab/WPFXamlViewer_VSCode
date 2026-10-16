@@ -2,7 +2,7 @@
   "name": "wpf-xaml-live-preview",
   "displayName": "WPF XAML Live Preview",
   "description": "%extension.description%",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "phulgrimlab",
   "license": "GPL-3.0-only",
   "preview": true,
