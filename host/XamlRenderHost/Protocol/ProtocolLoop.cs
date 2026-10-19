@@ -18,6 +18,15 @@ namespace XamlRenderHost.Protocol;
 /// </summary>
 public sealed class ProtocolLoop
 {
+    /// <summary>요청 한 줄의 최대 길이(문자). 넘는 줄은 읽어서 버리고 오류 응답을 보낸다(끝없는 줄로 메모리가 차는 것을 막는다). 32M 문자(약 64MB)는 정상 XAML에 충분히 크다.</summary>
+    public const int DefaultMaxRequestChars = 32 * 1024 * 1024;
+
+    /// <summary>요청 큐 용량(줄 수). 처리가 밀리면 읽기 스레드가 막혀 입력 파이프가 가득 차고, 보내는 쪽이 자연히 기다린다.</summary>
+    private const int RequestQueueCapacity = 8;
+
+    /// <summary>너무 긴 줄을 큐에 알리는 표식(요청 본문으로는 나올 수 없는 NUL 문자로 시작).</summary>
+    private const string TooLongMarker = "\0TooLong";
+
     /// <summary>응답 큐 용량(줄 수).</summary>
     private const int ResponseQueueCapacity = 64;
 
@@ -32,8 +41,11 @@ public sealed class ProtocolLoop
     /// <summary>stdout 쓰기가 끊겼다(확장이 파이프를 닫음). writer 스레드가 설정하고 메인 루프가 읽는다.</summary>
     private volatile bool _outputClosed;
 
-    public ProtocolLoop(TextReader input, TextWriter output, RequestHandler handler, HostLogger logger)
+    private readonly int _maxRequestChars;
+
+    public ProtocolLoop(TextReader input, TextWriter output, RequestHandler handler, HostLogger logger, int maxRequestChars = DefaultMaxRequestChars)
     {
+        _maxRequestChars = maxRequestChars;
         _input = input;
         _output = output;
         _handler = handler;
@@ -46,7 +58,7 @@ public sealed class ProtocolLoop
     /// </summary>
     public string Run()
     {
-        var requests = new BlockingCollection<string>();
+        var requests = new BlockingCollection<string>(RequestQueueCapacity);
         var responses = new BlockingCollection<string>(ResponseQueueCapacity);
 
         var reader = new Thread(() => ReadLoop(requests)) { IsBackground = true, Name = "StdinReader" };
@@ -77,7 +89,9 @@ public sealed class ProtocolLoop
                 // 요청 줄: 처리로 진행.
             }
 
-            var result = _handler.Handle(line);
+            var result = line == TooLongMarker
+                ? new HandleResult(RequestHandler.RequestTooLargeResponse(_maxRequestChars), false)
+                : _handler.Handle(line);
             responses.Add(result.ResponseJson);
             if (result.Shutdown)
             {
@@ -103,12 +117,55 @@ public sealed class ProtocolLoop
         return reason;
     }
 
+    /// <summary>
+    /// 한 줄을 읽는다(줄 끝 `\n`, 앞의 `\r`은 제거). 최대 길이를 넘으면 그 줄의 나머지를 읽어 버리고 <see cref="TooLongMarker"/>를 돌려준다(메모리에 쌓지 않는다). EOF면 null.
+    /// </summary>
+    private string? ReadBoundedLine()
+    {
+        var builder = new System.Text.StringBuilder();
+        var tooLong = false;
+        int next;
+        while ((next = _input.Read()) >= 0)
+        {
+            var c = (char)next;
+            if (c == '\n')
+            {
+                break;
+            }
+            else if (tooLong)
+            {
+                continue; // 넘친 줄의 나머지: 버린다.
+            }
+            else if (builder.Length >= _maxRequestChars)
+            {
+                tooLong = true;
+                builder.Clear();
+            }
+            else
+            {
+                builder.Append(c);
+            }
+        }
+        if (next < 0 && builder.Length == 0 && !tooLong)
+        {
+            return null; // EOF
+        }
+        else if (tooLong)
+        {
+            return TooLongMarker;
+        }
+        else
+        {
+            return builder.Length > 0 && builder[^1] == '\r' ? builder.ToString(0, builder.Length - 1) : builder.ToString();
+        }
+    }
+
     private void ReadLoop(BlockingCollection<string> requests)
     {
         try
         {
             string? line;
-            while ((line = _input.ReadLine()) != null)
+            while ((line = ReadBoundedLine()) != null)
             {
                 requests.Add(line);
             }

@@ -350,8 +350,10 @@ export class HostClient {
             // 현재 호스트의 출력: 계속.
         }
 
+        // 새로 받은 조각에서만 줄바꿈을 찾는다(큰 응답이 여러 조각으로 올 때 이미 훑은 앞부분을 조각마다 다시 훑으면 응답 크기의 제곱에 비례해 느려진다).
+        const searchFrom = this._stdoutBuffer.length;
         this._stdoutBuffer += chunk;
-        let newline = this._stdoutBuffer.indexOf('\n');
+        let newline = this._stdoutBuffer.indexOf('\n', searchFrom);
         while (newline >= 0) {
             const line = this._stdoutBuffer.slice(0, newline).trim();
             this._stdoutBuffer = this._stdoutBuffer.slice(newline + 1);

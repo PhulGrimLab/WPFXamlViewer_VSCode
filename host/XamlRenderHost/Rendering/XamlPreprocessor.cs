@@ -292,6 +292,8 @@ public static partial class XamlPreprocessor
             var lineInfo = (IXmlLineInfo)reader;
             var openTagged = new Stack<(SourceElement Element, int Depth)>(); // 끝 위치를 아직 모르는 태그된 요소
             var ancestorNames = new List<string>(); // 깊이별 현재 조상 요소의 로컬 이름(부모가 리소스 사전인지 판단하는 데 쓴다)
+            var ancestorNamespaces = new List<string>(); // 위와 같은 깊이의 요소 네임스페이스
+            var ancestorStarts = new List<int>(); // 위와 같은 깊이의 요소 시작 오프셋('<' 위치)
             while (reader.Read())
             {
                 if (reader.NodeType == XmlNodeType.EndElement)
@@ -320,6 +322,8 @@ public static partial class XamlPreprocessor
                 if (ancestorNames.Count > reader.Depth)
                 {
                     ancestorNames.RemoveRange(reader.Depth, ancestorNames.Count - reader.Depth);
+                    ancestorNamespaces.RemoveRange(reader.Depth, ancestorNamespaces.Count - reader.Depth);
+                    ancestorStarts.RemoveRange(reader.Depth, ancestorStarts.Count - reader.Depth);
                 }
                 else
                 {
@@ -327,6 +331,8 @@ public static partial class XamlPreprocessor
                 }
                 var parentName = reader.Depth > 0 && ancestorNames.Count >= reader.Depth ? ancestorNames[reader.Depth - 1] : null;
                 ancestorNames.Add(reader.LocalName);
+                ancestorNamespaces.Add(reader.NamespaceURI);
+                ancestorStarts.Add(elementStart);
 
                 if (IsXamlCodeElement(reader))
                 {
@@ -371,6 +377,27 @@ public static partial class XamlPreprocessor
                     edits.Add(new Edit(elementStart, end, BlankPreservingNewlines(xaml, elementStart, end)));
                     warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed,
                         Loc.T($"소유자 타입을 해석할 수 없어 {reader.Name} 속성 요소를 제거했습니다.", $"Removed the {reader.Name} property element because its owner type cannot be resolved."), lineInfo.LineNumber, lineInfo.LinePosition - 1));
+                }
+                else if (parentName != null && ancestorNamespaces.Count >= reader.Depth && IsUnresolvableUserType(reader, context)
+                    && PropertyRejectsPlaceholder(context, ancestorNamespaces[reader.Depth - 1], parentName))
+                {
+                    // `<TextBlock.Text><local:Loc Key="x"/></TextBlock.Text>`처럼 사용자 타입 요소(보통 마크업 확장)가 문자열/브러시 같은 **자리표시자(Border)를 받을 수 없는 속성**의 값이다.
+                    // 자리표시자를 두면 "값 설정 예외"로 전체가 실패하므로 그 속성 요소를 통째로 지운다.
+                    var childEnd = FindElementEnd(reader, xaml, lineStarts, lineInfo);
+                    var closing = Regex.Match(xaml[childEnd..], @"^\s*</(?:\w+:)?" + Regex.Escape(parentName) + @"\s*>");
+                    if (closing.Success)
+                    {
+                        var parentStart = ancestorStarts[reader.Depth - 1];
+                        var parentEnd = childEnd + closing.Length;
+                        edits.Add(new Edit(parentStart, parentEnd, BlankPreservingNewlines(xaml, parentStart, parentEnd)));
+                        warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed,
+                            Loc.T($"{reader.Name}을(를) 해석할 수 없고 {parentName} 속성은 자리표시자를 받을 수 없어 그 속성 요소를 제거했습니다.", $"Cannot resolve {reader.Name}, and the {parentName} property cannot hold a placeholder, so the property element was removed."), lineInfo.LineNumber, lineInfo.LinePosition - 1));
+                    }
+                    else
+                    {
+                        // 부모 닫는 태그가 바로 뒤에 없다(자식이 여럿 등): 평소처럼 자리표시자로 둔다.
+                        edits.Add(new Edit(elementStart, childEnd, BuildPlaceholder(reader, xaml, lineStarts, lineInfo) + NewlinesIn(xaml, elementStart, childEnd)));
+                    }
                 }
                 else if (IsUnresolvableUserType(reader, context))
                 {
@@ -786,6 +813,42 @@ public static partial class XamlPreprocessor
         => reader.NamespaceURI == PresentationNamespace && reader.LocalName == "ResourceDictionary" && reader.GetAttribute("Source") != null;
 
     /// <summary>clr-namespace 타입인데 어셈블리를 찾지 못해 XamlReader가 만들 수 없는 요소인가(속성 요소 `Type.Prop` 제외).</summary>
+    /// <summary>
+    /// `부모속성`("소유자.멤버")이 값으로 자리표시자(Border)를 받을 수 없는가: 소유자가 알려진 WPF 타입이고, 그 멤버가 컬렉션/딕셔너리가 아니며, 멤버 형식에 Border를 넣을 수 없다(string, Brush, int 등).
+    /// 소유자나 멤버를 모르면 false(아무것도 바꾸지 않는다).
+    /// </summary>
+    private static bool PropertyRejectsPlaceholder(Context context, string ownerNamespace, string parentProperty)
+    {
+        var dot = parentProperty.IndexOf('.');
+        if (dot <= 0 || dot == parentProperty.Length - 1)
+        {
+            return false;
+        }
+        else
+        {
+            // `소유자.멤버` 형태.
+        }
+        if (parentProperty[..dot] is "Binding" or "MultiBinding" or "PriorityBinding")
+        {
+            return false; // 바인딩의 Converter 등은 아래쪽 후처리(MultiBinding 전체 제거 등)가 맡는다: 여기서 먼저 지우면 MultiBinding이 컨버터 없이 남는다.
+        }
+        else
+        {
+            // 바인딩이 아니다.
+        }
+        var owner = context.Schema.GetXamlType(new XamlTypeName(WithProjectAssembly(ownerNamespace, context), parentProperty[..dot]));
+        var member = owner == null || owner.IsUnknown ? null : owner.GetMember(parentProperty[(dot + 1)..]);
+        var memberType = member?.Type;
+        if (memberType == null || memberType.IsUnknown || memberType.IsCollection || memberType.IsDictionary || memberType.IsArray || memberType.UnderlyingType == null)
+        {
+            return false;
+        }
+        else
+        {
+            return !memberType.UnderlyingType.IsAssignableFrom(typeof(System.Windows.Controls.Border));
+        }
+    }
+
     private static bool IsUnresolvableUserType(XmlReader reader, Context context)
         => !reader.LocalName.Contains('.') && IsUnresolvableTypeInNamespace(reader.NamespaceURI, reader.LocalName, context);
 

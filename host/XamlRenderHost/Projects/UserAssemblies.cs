@@ -69,6 +69,9 @@ public sealed class UserAssemblies
         public required string SourcePath { get; init; }
         public required DateTime SourceWriteTimeUtc { get; init; }
         public required long SourceLength { get; init; }
+
+        /// <summary>출력 폴더 바로 아래 `*.dll`들의 지문(개수, 가장 최근 수정 시각). 프로젝트 참조/NuGet 의존 DLL만 다시 빌드돼도 달라진다.</summary>
+        public required long DependencyStamp { get; init; }
         public required string TempDirectory { get; init; }
         public required UserLoadContext Context { get; init; }
         public required Assembly Assembly { get; init; }
@@ -242,12 +245,45 @@ public sealed class UserAssemblies
             {
                 var info = new FileInfo(artifact.AssemblyPath);
                 return info.Exists
-                    && !(existing.SourcePath == artifact.AssemblyPath && existing.SourceWriteTimeUtc == info.LastWriteTimeUtc && existing.SourceLength == info.Length);
+                    && !(existing.SourcePath == artifact.AssemblyPath && existing.SourceWriteTimeUtc == info.LastWriteTimeUtc && existing.SourceLength == info.Length
+                        && existing.DependencyStamp == ComputeDependencyStamp(artifact.AssemblyPath));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 return false; // 읽을 수 없으면 Ensure가 실패로 처리한다.
             }
+        }
+    }
+
+    /// <summary>
+    /// 산출물 폴더 바로 아래 `*.dll`의 (개수, 가장 최근 수정 시각)으로 만든 지문. 주 DLL은 그대로인데 참조한 프로젝트/NuGet DLL만 다시 빌드된 경우도 "바뀜"으로 보게 한다
+    /// (이전에는 주 DLL의 수정 시각/크기만 비교해 그 경우 낡은 의존 DLL을 계속 썼다). 디렉터리 열거는 파일마다 따로 stat하지 않아 렌더마다 불러도 가볍다.
+    /// </summary>
+    private static long ComputeDependencyStamp(string assemblyPath)
+    {
+        try
+        {
+            var directory = Path.GetDirectoryName(assemblyPath);
+            if (directory == null)
+            {
+                return 0;
+            }
+            else
+            {
+                // 출력 폴더 있음.
+            }
+            long count = 0;
+            long newest = 0;
+            foreach (var file in new DirectoryInfo(directory).EnumerateFiles("*.dll", SearchOption.TopDirectoryOnly))
+            {
+                count++;
+                newest = Math.Max(newest, file.LastWriteTimeUtc.Ticks);
+            }
+            return HashCode.Combine(count, newest);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return 0; // 읽을 수 없으면 지문 없음(주 DLL 비교만 한다).
         }
     }
 
@@ -279,7 +315,8 @@ public sealed class UserAssemblies
             if (_projects.TryGetValue(artifact.ProjectFile, out var existing))
             {
                 if (existing.SourcePath == artifact.AssemblyPath
-                    && existing.SourceWriteTimeUtc == info.LastWriteTimeUtc && existing.SourceLength == info.Length)
+                    && existing.SourceWriteTimeUtc == info.LastWriteTimeUtc && existing.SourceLength == info.Length
+                    && existing.DependencyStamp == ComputeDependencyStamp(artifact.AssemblyPath))
                 {
                     return new UserAssemblyLoad(existing.Assembly, false, 0, null);
                 }
@@ -309,6 +346,7 @@ public sealed class UserAssemblies
                     SourcePath = artifact.AssemblyPath,
                     SourceWriteTimeUtc = info.LastWriteTimeUtc,
                     SourceLength = info.Length,
+                    DependencyStamp = ComputeDependencyStamp(artifact.AssemblyPath),
                     TempDirectory = tempDirectory,
                     Context = context,
                     Assembly = assembly,
@@ -533,6 +571,12 @@ public sealed class UserAssemblies
     /// 출력 폴더 **바로 아래**의 DLL이 호스트의 공유 프레임워크(런타임 + WPF)에 있는 것과 같은 이름인가. 자체 포함(self-contained) 출력은 프레임워크 DLL 수백 개(PathDock 기준 145MB 중 137MB)를 담는데,
     /// 사용자 컨텍스트는 그것을 로드하지 않고 호스트의 기본 컨텍스트 것을 쓰므로(`UserLoadContext.Load`) 복사하지 않아도 동작이 같다. 복사를 건너뛰면 첫 로드의 디스크 I/O와 %TEMP% 사용량이 크게 준다.
     /// </summary>
+    /// <summary>임시 복사본에 넣지 않을 확장자: 로드에 쓰지 않는 심볼(.pdb)과, 출력 폴더에 섞여 있을 수 있는 인증서/키 파일(복사본이 %TEMP%에 남는 것을 피한다).</summary>
+    private static readonly HashSet<string> NeverCopiedExtensions = new(StringComparer.OrdinalIgnoreCase) { ".pdb", ".pfx", ".p12", ".pem", ".key", ".snk" };
+
+    private static bool ShouldSkipCopy(string sourceDirectory, string file)
+        => NeverCopiedExtensions.Contains(Path.GetExtension(file)) || IsFrameworkCopyAtTopLevel(sourceDirectory, file);
+
     private static bool IsFrameworkCopyAtTopLevel(string sourceDirectory, string file)
     {
         return string.Equals(Path.GetDirectoryName(file), sourceDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
@@ -553,7 +597,7 @@ public sealed class UserAssemblies
             }
             foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.AllDirectories))
             {
-                if (IsFrameworkCopyAtTopLevel(sourceDirectory, file))
+                if (ShouldSkipCopy(sourceDirectory, file))
                 {
                     continue; // 자체 포함 출력의 프레임워크 복사본(수백 MB): 로드하지 않고 호스트의 것을 쓰므로 복사할 필요가 없다.
                 }
@@ -568,6 +612,14 @@ public sealed class UserAssemblies
         {
             foreach (var file in Directory.GetFiles(sourceDirectory, "*", SearchOption.TopDirectoryOnly))
             {
+                if (NeverCopiedExtensions.Contains(Path.GetExtension(file)))
+                {
+                    continue;
+                }
+                else
+                {
+                    // 로드에 필요할 수 있는 파일: 복사.
+                }
                 File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true);
             }
             foreach (var file in Directory.GetFiles(sourceDirectory, "*" + SatelliteAssemblySuffix, SearchOption.AllDirectories))

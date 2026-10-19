@@ -353,6 +353,10 @@ public sealed class RequestHandler
     private static string Ok(JsonNode? id, JsonObject result)
         => new JsonObject { ["id"] = id?.DeepClone(), ["ok"] = true, ["result"] = result }.ToJsonString();
 
+    /// <summary>요청 줄이 너무 길어 읽지 않았다는 응답(요청 id를 알 수 없어 null).</summary>
+    public static string RequestTooLargeResponse(int maxChars)
+        => Error(null, ProtocolErrorCodes.InvalidRequest, $"request line exceeds {maxChars} characters");
+
     private static string Error(JsonNode? id, string code, string message, int? line = null, int? column = null, string? projectReason = null)
     {
         // 메시지 길이 제한: 파서가 입력 조각을 길게 담아 응답이 폭주하는 것을 막는다.

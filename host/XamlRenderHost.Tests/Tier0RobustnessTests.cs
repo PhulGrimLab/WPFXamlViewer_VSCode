@@ -25,6 +25,8 @@ public class Tier0RobustnessTests
     [DataRow("<StackPanel.Resources><local:Sel x:Key=\"S\"/></StackPanel.Resources><ListBox ItemTemplateSelector=\"{StaticResource S}\"/>", DisplayName = "ItemTemplateSelector 리소스")]
     [DataRow("<StackPanel.Resources><local:MyBrush x:Key=\"B\"/></StackPanel.Resources><Border Background=\"{StaticResource B}\" Height=\"10\"/>", DisplayName = "사용자 브러시 리소스")]
     [DataRow("<TextBlock Text=\"{local:Loc Title}\"/>", DisplayName = "사용자 마크업 확장(속성)")]
+    [DataRow("<TextBlock><TextBlock.Text><local:Loc Key=\"x\"/></TextBlock.Text></TextBlock>", DisplayName = "사용자 마크업 확장(요소 형태)")]
+    [DataRow("<Border Height=\"10\"><Border.Background><local:MyBrushExt Name=\"x\"/></Border.Background></Border>", DisplayName = "사용자 타입이 브러시 속성의 값(요소 형태)")]
     [DataRow("<TextBlock Text=\"{Binding A, Converter={local:Conv}, FallbackValue={local:Loc X}}\"/>", DisplayName = "바인딩 안의 사용자 마크업 확장")]
     [DataRow("<Grid><local:Att.Value>5</local:Att.Value></Grid>", DisplayName = "사용자 첨부 속성 요소")]
     [DataRow("<Button><i:Interaction.Triggers><i:EventTrigger EventName=\"Click\"><i:InvokeCommandAction Command=\"{Binding C}\"/></i:EventTrigger></i:Interaction.Triggers></Button>", DisplayName = "Blend 동작(라이브러리 첨부 속성 요소)")]

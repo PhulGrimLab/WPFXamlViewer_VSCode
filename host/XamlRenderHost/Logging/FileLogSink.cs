@@ -25,6 +25,11 @@ public sealed class FileLogSink : ILogSink
     private StreamWriter? _writer;
     private long _currentBytes;
 
+    /// <summary>회전에 실패한(다른 창의 호스트가 파일을 잡고 있는 등) 뒤 다시 시도하기까지 기다리는 시간.</summary>
+    private static readonly TimeSpan RotateRetryDelay = TimeSpan.FromSeconds(60);
+
+    private DateTime _nextRotateAttemptUtc = DateTime.MinValue;
+
     public FileLogSink(string directory, string baseName = "host", long maxBytes = DefaultMaxBytes, int maxFiles = DefaultMaxFiles)
     {
         _directory = directory;
@@ -43,9 +48,17 @@ public sealed class FileLogSink : ILogSink
         {
             EnsureWriter();
             var bytes = Utf8NoBom.GetByteCount(line) + Environment.NewLine.Length;
-            if (_currentBytes > 0 && _currentBytes + bytes > _maxBytes)
+            if (_currentBytes > 0 && _currentBytes + bytes > _maxBytes && DateTime.UtcNow >= _nextRotateAttemptUtc)
             {
-                Rotate();
+                try
+                {
+                    Rotate();
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // 회전 실패(파일이 다른 프로세스에 잡혀 있음 등): 로그를 버리지 않고 현재 파일에 계속 쓰고, 한동안 다시 시도하지 않는다(매 줄 실패하며 로그가 사라지던 문제).
+                    _nextRotateAttemptUtc = DateTime.UtcNow + RotateRetryDelay;
+                }
                 EnsureWriter();
             }
             else

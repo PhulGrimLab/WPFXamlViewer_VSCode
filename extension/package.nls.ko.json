@@ -25,5 +25,6 @@
   "submenu.configMenu.label": "WPF XAML: 구성 선택 빌드",
   "task.target.description": ".csproj/.sln 경로",
   "command.resetProjectConsent.title": "WPF XAML: 프로젝트 코드 실행 허용 초기화",
-  "command.refreshPreview.title": "WPF XAML: 미리보기 새로고침"
+  "command.refreshPreview.title": "WPF XAML: 미리보기 새로고침",
+  "capabilities.untrustedWorkspaces.description": "신뢰되지 않은 폴더에서는 프로젝트 DLL을 불러오지 않고 사용자 정의 컨트롤을 자리표시자로 표시합니다."
 }

@@ -73,9 +73,10 @@ public class UserProjectTests
     [TestMethod]
     public void T03b_NoBuildArtifact_ParseFailureCarriesProjectReason()
     {
-        // 외부 라이브러리 타입은 이제 자리표시자가 되므로(성공 + ProjectTier0 경고), 자리표시자로 못 막는 실패(자리표시자가 문자열 속성의 값이 되는 요소 형태)로 시험한다.
+        // 라이브러리/프로젝트 타입은 이제 대부분 자리표시자로 처리되므로, 자리표시자로 고칠 수 없는 실패(WPF 요소의 존재하지 않는 속성)로 시험한다. 실패 원인과 무관하게
+        // 빌드 산출물이 없으면(NoArtifact) 이유가 실려 확장이 먼저 빌드하게 안내할 수 있어야 한다.
         using var project = UserProjectFixture.Create(withBuild: false);
-        const string unfixable = $"<TextBlock {Ns} xmlns:s=\"clr-namespace:SampleControls;assembly=SampleControls\"><TextBlock.Text><s:RedBox/></TextBlock.Text></TextBlock>";
+        const string unfixable = $"<TextBlock {Ns} NotARealProperty=\"1\"/>";
         File.WriteAllText(project.XamlPath, unfixable);
         var ex = Assert.Throws<XamlRenderException>(() => StaRunner.Run(() =>
             XamlRenderer.Render(new RenderRequest(unfixable, FilePath: project.XamlPath, AllowProjectAssemblies: true))));
