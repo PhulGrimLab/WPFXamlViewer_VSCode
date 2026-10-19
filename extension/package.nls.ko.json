@@ -24,5 +24,6 @@
   "config.language.description": "메시지, 상태 표시줄, 미리보기 도구 모음의 언어. `auto`는 VS Code 표시 언어(기본적으로 Windows 언어)를 따른다. 메뉴 제목 같은 매니페스트 문구는 VS Code 표시 언어(Configure Display Language)를 따른다.",
   "submenu.configMenu.label": "WPF XAML: 구성 선택 빌드",
   "task.target.description": ".csproj/.sln 경로",
-  "command.resetProjectConsent.title": "WPF XAML: 프로젝트 코드 실행 허용 초기화"
+  "command.resetProjectConsent.title": "WPF XAML: 프로젝트 코드 실행 허용 초기화",
+  "command.refreshPreview.title": "WPF XAML: 미리보기 새로고침"
 }

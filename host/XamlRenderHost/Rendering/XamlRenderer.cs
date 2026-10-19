@@ -129,7 +129,9 @@ public static class XamlRenderer
     /// <summary>전처리 → 파싱 → 레이아웃 → PNG/HitMap의 본체. tagElements=true면 HitMap용 Uid 태그를 붙인다.</summary>
     private static RenderResult RenderCore(RenderRequest request, ProjectTierInfo tier, System.Xaml.XamlSchemaContext? schema, bool tagElements)
     {
-        var preprocessed = XamlPreprocessor.Process(request.Xaml, request.FilePath, tier.Tier == 1 ? tier.AssemblyName : null, schema, tagElements);
+        var preprocessed = XamlPreprocessor.Process(request.Xaml, request.FilePath, tier.Tier == 1 ? tier.AssemblyName : null, schema, tagElements,
+            projectContext: tier.Tier == 0 && tier.Reason is ProjectTierReasons.Untrusted or ProjectTierReasons.LoadFailed or Projects.ProjectLookupReasons.NoArtifact
+                && !string.IsNullOrEmpty(request.FilePath) && Projects.ProjectLocator.BelongsToProject(request.FilePath, request.WorkspaceRoot));
         var warnings = new List<RenderWarning>(preprocessed.Warnings);
         if (tier.Tier == 1)
         {
@@ -218,6 +220,19 @@ public static class XamlRenderer
     /// 사용자 코드가 던진 것인지는 예외의 스택에 기본 컨텍스트가 아닌(= 사용자 컨텍스트) 어셈블리 프레임이 있는지로 판단한다.
     /// 그 외 실패(문법/값 오류 등)는 그대로 던진다. 반환: 루트와 최종 XAML(디자인 크기 읽기용).
     /// </summary>
+    /// <summary>실패의 가장 안쪽 원인이 `{StaticResource}`가 키를 찾지 못한 것인가.</summary>
+    private static bool IsMissingResource(Exception exception)
+    {
+        var innermost = exception;
+        while (innermost.InnerException != null)
+        {
+            innermost = innermost.InnerException;
+        }
+        // WPF는 StaticResource가 키를 못 찾으면 형식 없는 System.Exception("찾을 수 없는 리소스")을 StaticResourceExtension.ProvideValue에서 던진다.
+        return innermost is ResourceReferenceKeyNotFoundException
+            || (innermost.StackTrace?.Contains("StaticResourceExtension.ProvideValue", StringComparison.Ordinal) ?? false);
+    }
+
     private static (FrameworkElement Root, string Xaml) ParseWithUserFailureRecovery(string xaml, System.Xaml.XamlSchemaContext? schema, List<RenderWarning> warnings)
     {
         for (var attempt = 0; ; attempt++)
@@ -257,7 +272,14 @@ public static class XamlRenderer
             {
                 // 사용자 코드가 아닌 파싱 실패: 인라인된 병합 사전/앱 리소스 안의 요소면 그 요소만 건너뛰고 계속한다. 문서 본문의 오류는 그대로 보고한다.
                 var removal = XamlPreprocessor.RemoveFailedInlinedElement(xaml, ex.Line.Value, ex.Column.Value);
-                if (removal == null)
+                if (removal == null && schema == null && IsMissingResource(ex) && XamlPreprocessor.RemoveAttributeAt(xaml, ex.Line.Value, ex.Column.Value) is { } withoutAttribute)
+                {
+                    // `{StaticResource 없는키}`: 라이브러리 테마 사전에서 오는 키 등 이 호스트가 모르는 리소스 하나 때문에 전체가 실패하지 않게 그 속성만 빼고 계속한다.
+                    xaml = withoutAttribute.Xaml;
+                    warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed,
+                        Loc.T($"찾을 수 없는 리소스를 참조하는 {withoutAttribute.AttributeName} 속성을 제거했습니다.", $"Removed the {withoutAttribute.AttributeName} attribute that references a resource that cannot be found."), ex.Line, ex.Column));
+                }
+                else if (removal == null)
                 {
                     throw;
                 }

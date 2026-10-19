@@ -120,9 +120,10 @@ public class AppResourcesTests
         // 부모 폴더의 App.xaml은 다른 프로젝트 것이다: 자식 폴더에 .csproj가 있으면 거기서 탐색을 멈춘다.
         var app = AppXaml("<sys:Double x:Key=\"W\">55</sys:Double>");
         var main = $"<Button {Ns} Width=\"{{StaticResource W}}\" Height=\"20\"/>";
-        var ex = Assert.Throws<XamlRenderException>(() =>
-            PreprocessorTests.RenderWithFiles(new() { ["App.xaml"] = app, ["Child/Child.csproj"] = CsProj, ["Child/Main.xaml"] = main }, "Child/Main.xaml"));
-        Assert.AreEqual(RenderErrorCodes.XamlParse, ex.Code);
+        // 프로젝트 DLL을 불러오지 않은 렌더(Tier 0)에서 못 찾는 리소스는 전체 실패가 아니라 그 속성만 빠지고 경고가 남는다: 부모의 App.xaml 값(55)이 쓰이면 안 된다.
+        var result = PreprocessorTests.RenderWithFiles(new() { ["App.xaml"] = app, ["Child/Child.csproj"] = CsProj, ["Child/Main.xaml"] = main }, "Child/Main.xaml");
+        Assert.AreNotEqual(55, result.PixelWidth, "경계 밖 App.xaml의 리소스가 적용되면 안 된다");
+        CollectionAssert.Contains(Codes(result), WarningCodes.PlaceholderUsed);
     }
 
     [TestMethod]

@@ -3,7 +3,7 @@ import { registerLanguage } from './language';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { COMMAND_OPEN_PREVIEW, COMMAND_RESET_CONSENT, HOST_LOG_DIR_NAME } from './constants';
+import { COMMAND_OPEN_PREVIEW, COMMAND_REFRESH_PREVIEW, COMMAND_RESET_CONSENT, HOST_LOG_DIR_NAME } from './constants';
 import { HostClient, LogFn } from './hostClient';
 import { resolveHostExe } from './hostLocator';
 import { LogId, formatLogLine } from './logFormat';
@@ -101,6 +101,7 @@ export function activate(context: vscode.ExtensionContext): ExtensionTestApi {
         { dispose: () => { void client.dispose(); } },
         vscode.commands.registerCommand(COMMAND_OPEN_PREVIEW, () => controller.open()),
         vscode.commands.registerCommand(COMMAND_RESET_CONSENT, () => controller.resetConsent()),
+        vscode.commands.registerCommand(COMMAND_REFRESH_PREVIEW, () => controller.refresh()),
     );
     controller.handleActiveEditor(vscode.window.activeTextEditor);
     api.hostFound = true;

@@ -24,5 +24,6 @@
   "config.language.description": "Language of messages, status bar and preview toolbar. `auto` follows the VS Code display language (which follows the Windows language by default). Manifest texts such as menu titles follow the VS Code display language (Configure Display Language).",
   "submenu.configMenu.label": "WPF XAML: Build with Configuration",
   "task.target.description": "Path of the .csproj/.sln",
-  "command.resetProjectConsent.title": "WPF XAML: Reset Project Code Approvals"
+  "command.resetProjectConsent.title": "WPF XAML: Reset Project Code Approvals",
+  "command.refreshPreview.title": "WPF XAML: Refresh Preview"
 }

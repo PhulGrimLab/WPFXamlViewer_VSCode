@@ -33,6 +33,7 @@
 | `wpfXamlViewer.openPreview` | WPF XAML: Open Preview | 활성 `.xaml` 파일을 에디터 옆 패널에 미리보기한다. `.xaml`이 아니면 안내만 한다. |
 | `wpfXamlViewer.buildProject` | WPF XAML: 프로젝트 빌드 | 탐색기에서 `.csproj`/`.sln`/`.slnx`를 **우클릭 → 프로젝트 빌드**. 그 프로젝트만 `dotnet build`를 실행한다(아래 "프로젝트 빌드/정리"). |
 | `wpfXamlViewer.switchLanguage` | WPF XAML: 언어 전환 (한국어 / English) | 확장의 표시 언어를 **자동 / 한국어 / English** 중에서 고른다(설정 `wpfXamlViewer.language`에 저장). 상태 표시줄, 알림, 미리보기 도구 모음, 호스트 경고 문구가 바로 바뀐다. |
+| `wpfXamlViewer.refreshPreview` | WPF XAML: 미리보기 새로고침 | 열려 있는 미리보기를 다시 렌더한다. 미리보기 툴바 맨 왼쪽의 **↻ 새로고침** 버튼과 같다. 실패했던 자동 빌드와 프로젝트 코드 실행 허용 확인도 처음부터 다시 시도한다. |
 | `wpfXamlViewer.resetProjectConsent` | WPF XAML: 프로젝트 코드 실행 허용 초기화 | 프로젝트별로 허용한 "프로젝트 코드 실행" 기록을 모두 지운다. 다음 미리보기 때 다시 확인한다(5절). |
 | `wpfXamlViewer.rebuildProject` | WPF XAML: 프로젝트 다시 빌드 | `.csproj` 우클릭. `dotnet build --no-incremental`. |
 | `wpfXamlViewer.cleanProject` | WPF XAML: 프로젝트 정리 | `.csproj`/`.sln` 우클릭. `dotnet clean`. |

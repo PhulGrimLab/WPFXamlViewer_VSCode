@@ -23,6 +23,9 @@ export const PACKAGED_HOST_RELATIVE_PATH = 'bin/host/XamlRenderHost.exe';
 /** 확장 명령 ID. */
 export const COMMAND_OPEN_PREVIEW = 'wpfXamlViewer.openPreview';
 
+/** 미리보기를 다시 렌더하는 명령 ID(툴바의 새로고침 버튼과 같다. package.json과 같아야 한다). */
+export const COMMAND_REFRESH_PREVIEW = 'wpfXamlViewer.refreshPreview';
+
 /** 프로젝트 코드 실행 허용 기록을 지우는 명령 ID(package.json과 같아야 한다). */
 export const COMMAND_RESET_CONSENT = 'wpfXamlViewer.resetProjectConsent';
 

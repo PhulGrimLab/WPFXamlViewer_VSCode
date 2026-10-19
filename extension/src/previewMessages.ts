@@ -80,8 +80,13 @@ export interface SetSizeMessage {
     height: number | null;
 }
 
+/** 웹뷰 → 확장: 다시 렌더 요청(툴바의 새로고침 버튼). */
+export interface RefreshMessage {
+    type: 'refresh';
+}
+
 /** 웹뷰 → 확장 메시지. */
-export type FromWebviewMessage = ImageShownMessage | ClickMessage | ViewStateMessage | SetSizeMessage;
+export type FromWebviewMessage = ImageShownMessage | ClickMessage | ViewStateMessage | SetSizeMessage | RefreshMessage;
 
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
@@ -117,6 +122,8 @@ export function parseFromWebview(raw: unknown): FromWebviewMessage | undefined {
             return isFiniteNumber(m.zoom) && m.zoom >= MIN_ZOOM && m.zoom <= MAX_ZOOM && BACKGROUNDS.includes(m.background as Background)
                 ? { type: 'viewState', zoom: m.zoom, background: m.background as Background }
                 : undefined;
+        case 'refresh':
+            return { type: 'refresh' };
         case 'setSize': {
             const width = parseSize(m.width);
             const height = parseSize(m.height);

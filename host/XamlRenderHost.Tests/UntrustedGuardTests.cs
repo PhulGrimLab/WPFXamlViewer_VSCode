@@ -128,6 +128,19 @@ public class UntrustedGuardTests
     }
 
     [TestMethod]
+    public void G11_ConverterResourceOfUnresolvableUserType_IsRemovedFromBindings_NotAFailure()
+    {
+        // 프로젝트 DLL을 불러오지 않은(Tier 0) 렌더: 사용자 타입 컨버터 리소스는 자리표시자가 되어 IValueConverter가 아니므로, 그것을 Converter로 쓰는 바인딩이 형변환 예외로 창 전체를 깨뜨렸다.
+        var xaml = $"<StackPanel {Ns} xmlns:local=\"clr-namespace:Nope.App\" Width=\"160\"><StackPanel.Resources><local:InverseBoolToVisibilityConverter x:Key=\"Inv\"/></StackPanel.Resources>"
+            + "<TextBox IsEnabled=\"{Binding IsConnected, Converter={StaticResource Inv}}\" Text=\"a\"/>"
+            + "<TextBox Visibility=\"{Binding Converter={StaticResource Inv}, Path=Shown}\" Text=\"b\"/>"
+            + "<TextBox IsEnabled=\"{Binding A, Converter={StaticResource Inv}, FallbackValue=True}\" Text=\"c\"/></StackPanel>";
+        var result = RenderTestHelper.Render(xaml);
+        Assert.AreEqual(160, result.PixelWidth);
+        StringAssert.Contains(string.Join("|", result.Warnings!.Select(w => w.Message)), "3");
+    }
+
+    [TestMethod]
     public void G10_UserTypeStaticAndAttachedProperty_InUntrustedMode_DoNotFailTheWholeRender()
     {
         // 프로젝트 DLL을 불러오지 않은(Tier 0) 렌더에서 사용자 타입의 {x:Static}과 첨부 속성 하나 때문에 미리보기 전체가 실패하면 안 된다.

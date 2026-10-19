@@ -272,6 +272,10 @@ public static class ProjectLocator
         }
     }
 
+    /// <summary>이 XAML이 프로젝트(가장 가까운 `.csproj`, 또는 공유 프로젝트 `.projitems`)에 속하는가. 산출물은 보지 않는다(가볍다).</summary>
+    public static bool BelongsToProject(string xamlFilePath, string? workspaceRoot = null)
+        => FindNearestProjectFile(xamlFilePath, workspaceRoot) != null || (FindNearestSharedItems(xamlFilePath) is { } shared && IsUnderRoot(shared, workspaceRoot));
+
     private static string? FindNearestProjectFile(string xamlFilePath, string? workspaceRoot)
     {
         var directory = Path.GetDirectoryName(Path.GetFullPath(xamlFilePath));

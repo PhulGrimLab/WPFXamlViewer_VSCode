@@ -73,10 +73,12 @@ public class UserProjectTests
     [TestMethod]
     public void T03b_NoBuildArtifact_ParseFailureCarriesProjectReason()
     {
+        // 외부 라이브러리 타입은 이제 자리표시자가 되므로(성공 + ProjectTier0 경고), 자리표시자로 못 막는 실패(자리표시자가 문자열 속성의 값이 되는 요소 형태)로 시험한다.
         using var project = UserProjectFixture.Create(withBuild: false);
-        File.WriteAllText(project.XamlPath, LibraryXaml);
+        const string unfixable = $"<TextBlock {Ns} xmlns:s=\"clr-namespace:SampleControls;assembly=SampleControls\"><TextBlock.Text><s:RedBox/></TextBlock.Text></TextBlock>";
+        File.WriteAllText(project.XamlPath, unfixable);
         var ex = Assert.Throws<XamlRenderException>(() => StaRunner.Run(() =>
-            XamlRenderer.Render(new RenderRequest(LibraryXaml, FilePath: project.XamlPath, AllowProjectAssemblies: true))));
+            XamlRenderer.Render(new RenderRequest(unfixable, FilePath: project.XamlPath, AllowProjectAssemblies: true))));
         Assert.AreEqual(ProjectLookupReasons.NoArtifact, ex.ProjectReason, "산출물이 없으면 확장이 먼저 빌드하도록 이유를 알려야 한다");
     }
 
@@ -297,16 +299,10 @@ public class UserProjectTests
         Assert.AreEqual(55, trusted.PixelWidth, "신뢰된 렌더는 App.xaml 리소스를 본다");
 
         File.Delete(appXaml); // 문서 안 주입으로는 더 이상 보이지 않는다. 남은 경로는 Application.Resources뿐이다.
-        XamlRenderException? failure = null;
-        try
-        {
-            Render(project, xaml, allow: false);
-        }
-        catch (XamlRenderException ex)
-        {
-            failure = ex;
-        }
-        Assert.IsNotNull(failure, "신뢰하지 않은 렌더는 앞서 올린 Application.Resources를 볼 수 없어야 한다(키를 못 찾아 실패)");
+        // 키를 못 찾은 속성은 전체 실패 대신 그 속성만 빠지고 경고가 남는다: 앞서 올린 값(55)이 보이면 누출이다.
+        var untrusted = Render(project, xaml, allow: false);
+        Assert.AreNotEqual(55, untrusted.PixelWidth, "신뢰하지 않은 렌더는 앞서 올린 Application.Resources를 볼 수 없어야 한다");
+        CollectionAssert.Contains(Codes(untrusted), WarningCodes.PlaceholderUsed);
     }
 
     [TestMethod]

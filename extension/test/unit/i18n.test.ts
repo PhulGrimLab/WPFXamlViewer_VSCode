@@ -67,5 +67,7 @@ describe('다국어 (X-L)', () => {
         assert.ok(ko.includes('<html lang="ko">') && ko.includes('체크무늬') && ko.includes('렌더 중...'));
         assert.ok(en.includes('<html lang="en">') && en.includes('Checkerboard') && en.includes('Rendering...'));
         assert.ok(!en.includes('체크무늬'));
+        assert.ok(ko.includes('id="refresh"') && ko.includes('새로고침') && en.includes('id="refresh"') && en.includes('>&#x21BB; Refresh<'), '새로고침 버튼이 툴바 맨 앞에 있어야 한다');
+        assert.ok(ko.indexOf('id="refresh"') < ko.indexOf('id="zoomOut"'));
     });
 });

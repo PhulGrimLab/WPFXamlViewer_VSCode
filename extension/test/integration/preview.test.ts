@@ -233,6 +233,18 @@ describe('미리보기 통합 (실제 VS Code + 실제 호스트)', () => {
         await waitUntil(() => api.getPreviewState().viewState?.zoom === 1 && api.getPreviewState().viewState?.background === 'checker');
     });
 
+    it('I-15 툴바 새로고침(refresh 메시지)과 명령으로 다시 렌더한다', async () => {
+        await openPreviewOf('Refresh.xaml', `<Border ${NS} Background="Red" MinWidth="10" MinHeight="10"/>`, 1);
+        const before = api.getPreviewState().renderCount;
+        api.simulateWebviewMessage({ type: 'refresh' });
+        await waitUntil(() => api.getPreviewState().renderCount > before);
+        const afterButton = api.getPreviewState().renderCount;
+        await vscode.commands.executeCommand('wpfXamlViewer.refreshPreview');
+        await waitUntil(() => api.getPreviewState().renderCount > afterButton);
+        const original = await vscode.workspace.openTextDocument(path.join(process.env.XAMLVIEWER_TEST_WORKSPACE as string, 'Test.xaml'));
+        editor = await vscode.window.showTextDocument(original);
+    });
+
     it('I-05c 렌더 크기 지정: setSize → 다시 렌더되어 이미지 크기가 바뀌고 자동으로 되돌릴 수 있다', async () => {
         // 명시 크기가 없고 콘텐츠 크기는 10x10(최소 크기). 요청 크기가 있으면 루트가 그 크기로 늘어난다.
         await openPreviewOf('Size.xaml', `<Border ${NS} Background="Red" MinWidth="10" MinHeight="10"/>`, 1);

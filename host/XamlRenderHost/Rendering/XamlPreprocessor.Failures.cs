@@ -13,6 +13,52 @@ public sealed record FailedElementReplacement(string Xaml, string TypeName, int 
 /// </summary>
 public static partial class XamlPreprocessor
 {
+    /// <summary>`속성이름="` 시작(접두사/점 포함).</summary>
+    private static readonly System.Text.RegularExpressions.Regex AttributeStart = new(@"\G[\w:.]+\s*=\s*[""']", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// 파서가 보고한 줄/열(1-base)의 속성을 통째로 지운다(줄 수는 유지). `{StaticResource 없는키}`처럼 값을 만들지 못한 속성 하나 때문에 문서 전체가 실패하지 않게 하는 복구용이다.
+    /// 보고된 위치가 속성 이름의 시작이 아니면 같은 줄에서 그 위치 이전에 시작한 마지막 속성을 찾는다. 속성을 특정하지 못하면 null.
+    /// </summary>
+    public static (string Xaml, string AttributeName)? RemoveAttributeAt(string xaml, int reportedLine, int reportedColumn)
+    {
+        var lineStarts = BuildLineStarts(xaml);
+        if (reportedLine < 1 || reportedLine > lineStarts.Count)
+        {
+            return null;
+        }
+        else
+        {
+            // 줄 번호 유효.
+        }
+        var lineStart = lineStarts[reportedLine - 1];
+        var lineEnd = reportedLine < lineStarts.Count ? lineStarts[reportedLine] : xaml.Length;
+        var offset = Math.Clamp(lineStart + reportedColumn - 1, lineStart, Math.Max(lineStart, lineEnd - 1));
+        // 보고 위치에서 시작하는 속성, 아니면 그 앞(같은 줄)에서 시작해 보고 위치를 덮는 마지막 속성.
+        for (var candidate = offset; candidate >= lineStart; candidate--)
+        {
+            var match = AttributeStart.Match(xaml, candidate);
+            if (match.Success && (candidate == lineStart || char.IsWhiteSpace(xaml[candidate - 1])))
+            {
+                var end = FindAttributeEnd(xaml, candidate);
+                if (end > offset || candidate == offset)
+                {
+                    var name = xaml.Substring(candidate, match.Length).TrimEnd('=', ' ', '"', '\'', '\t');
+                    return (xaml[..candidate] + BlankPreservingNewlines(xaml, candidate, end) + xaml[end..], name);
+                }
+                else
+                {
+                    return null; // 보고 위치를 덮지 않는 앞쪽 속성: 특정하지 못했다.
+                }
+            }
+            else
+            {
+                // 속성 시작이 아니다: 더 앞으로.
+            }
+        }
+        return null;
+    }
+
     /// <summary>
     /// 입력: 전처리된 XAML, 파서가 보고한 줄/열(1-base), 표시할 오류 요약. 출력: 대체 결과, 해당 위치에 clr-namespace 요소가 없으면 null.
     /// 대상은 "보고된 위치 이전(포함)에서 가장 마지막에 시작한 요소"이며 clr-namespace 타입일 때만 대체한다

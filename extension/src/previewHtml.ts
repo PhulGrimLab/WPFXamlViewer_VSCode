@@ -43,6 +43,7 @@ export function buildPreviewHtml(nonce: string, cspSource: string, language: Lan
 </head>
 <body>
 <div id="toolbar">
+  <button id="refresh" title="${L('web.refreshTitle')}">&#x21BB; ${L('web.refresh')}</button>
   <button id="zoomOut" title="${L('web.zoomOut')}">−</button>
   <span id="zoomLabel">100%</span>
   <button id="zoomIn" title="${L('web.zoomIn')}">+</button>
@@ -174,6 +175,7 @@ export function buildPreviewHtml(nonce: string, cspSource: string, language: Lan
     }
   });
 
+  $('refresh').addEventListener('click', () => { vscode.postMessage({ type: 'refresh' }); });
   const parseSize = (text) => { const v = parseInt(text, 10); return Number.isFinite(v) && v > 0 ? v : null; };
   $('applySize').addEventListener('click', () => {
     vscode.postMessage({ type: 'setSize', width: parseSize($('sizeW').value), height: parseSize($('sizeH').value) });

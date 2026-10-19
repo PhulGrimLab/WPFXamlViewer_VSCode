@@ -162,6 +162,7 @@ public static partial class XamlPreprocessor
         {
             ProjectAssemblyName = context.ProjectAssemblyName,
             Schema = context.Schema,
+            ForeignNamespacePlaceholders = context.ForeignNamespacePlaceholders,
         };
         XDocument document;
         try
@@ -175,6 +176,7 @@ public static partial class XamlPreprocessor
             return null;
         }
 
+        context.PlaceholderKeys.UnionWith(appContext.PlaceholderKeys); // App.xaml 리소스의 자리표시자 키도 문서의 바인딩 정리에 쓴다.
         foreach (var w in appContext.Warnings.Where(w => w.Code is WarningCodes.PlaceholderUsed or WarningCodes.DictionaryUnavailable))
         {
             context.Warnings.Add(new RenderWarning(w.Code, $"{ApplicationFileName}: {w.Message}", null, null));

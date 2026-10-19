@@ -124,8 +124,14 @@ public static partial class XamlPreprocessor
         /// <summary>Tier 1에서 로드한 프로젝트 어셈블리 이름. `assembly=` 없는 clr-namespace는 이 어셈블리로 해석한다. Tier 0이면 null.</summary>
         public string? ProjectAssemblyName { get; init; }
 
+        /// <summary>true면 외부 라이브러리 xmlns URI의 모르는 타입도 자리표시자로 처리한다: 문서가 **프로젝트에 속하는데** 그 DLL을 불러오지 않은 렌더(미신뢰/빌드 산출물 없음/로드 실패)일 때만 켠다. 프로젝트 없는 낱개 XAML의 오타는 오류로 남긴다.</summary>
+        public bool ForeignNamespacePlaceholders { get; init; }
+
         /// <summary>true면 주 문서(깊이 0)의 UIElement 요소에 `Uid="xv_번호"`를 붙이고 위치를 <see cref="SourceElements"/>에 기록한다(HitMap).</summary>
         public bool TagElements { get; init; }
+
+        /// <summary>자리표시자로 바꾼 요소(사용자 타입 리소스)의 `x:Key`. 그 키를 `Converter`로 가리키는 바인딩은 자리표시자(Border)가 IValueConverter가 아니라 형변환 예외가 나므로 지운다.</summary>
+        public readonly HashSet<string> PlaceholderKeys = new(StringComparer.Ordinal);
 
         /// <summary>태그한 요소들의 원본 위치(Uid 번호 = 목록 인덱스).</summary>
         public List<SourceElement> SourceElements { get; } = new();
@@ -143,7 +149,7 @@ public static partial class XamlPreprocessor
     /// 전처리를 수행한다. 입력: XAML 원문, (선택) 문서 파일 경로(병합 사전의 상대 경로 해석용). 출력: 변환된 XAML과 경고 목록.
     /// 예외: 원문 XML이 올바르지 않으면 <see cref="XamlRenderException"/>(XmlMalformed).
     /// </summary>
-    public static PreprocessResult Process(string xaml, string? filePath, string? projectAssemblyName = null, XamlSchemaContext? schema = null, bool tagElements = false)
+    public static PreprocessResult Process(string xaml, string? filePath, string? projectAssemblyName = null, XamlSchemaContext? schema = null, bool tagElements = false, bool projectContext = false)
     {
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrEmpty(filePath))
@@ -154,10 +160,123 @@ public static partial class XamlPreprocessor
         {
             // 파일 경로 없음: 순환 감지는 사전 파일부터 시작한다.
         }
-        var context = new Context(visited) { ProjectAssemblyName = projectAssemblyName, Schema = schema ?? new XamlSchemaContext(), TagElements = tagElements };
+        var context = new Context(visited) { ProjectAssemblyName = projectAssemblyName, Schema = schema ?? new XamlSchemaContext(), TagElements = tagElements, ForeignNamespacePlaceholders = projectContext && projectAssemblyName == null };
         var processed = ProcessInternal(xaml, filePath, context, depth: 0);
         processed = InjectApplicationResources(processed, filePath, context);
+        processed = RemoveConvertersOfPlaceholders(processed, context);
         return new PreprocessResult(processed, context.Warnings, context.SourceElements, context.ApplicationResourcesXml);
+    }
+
+    /// <summary>`Converter={StaticResource 키}`(또는 DynamicResource). 앞의 쉼표가 있으면 함께 지운다.</summary>
+    private static readonly Regex ConverterResourceReference = new(@"(?<comma>,\s*)?\bConverter\s*=\s*\{\s*(?:StaticResource|DynamicResource)\s+(?<key>[\w.]+)\s*\}(?<trail>\s*,\s*)?", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// 사용자 타입을 만들 수 없어(Tier 0) 자리표시자로 바꾼 리소스를 `Converter`로 쓰는 바인딩에서 그 `Converter=…`만 지운다. 자리표시자는 IValueConverter가 아니라서 둘 수 없고
+    /// (`Binding.Converter` 설정에서 InvalidCastException) 그대로 두면 창 전체가 실패한다. 컨버터 없이 바인딩은 남는다. 경고로 알린다.
+    /// </summary>
+    private static string RemoveConvertersOfPlaceholders(string xaml, Context context)
+    {
+        // 자리표시자가 들어간 비주얼이 아닌 속성 요소(Binding.Converter 등)와 ItemsPanelTemplate은 키와 무관하게 정리한다.
+        var propertyElementsRemoved = 0;
+        xaml = MultiBindingWithPlaceholderConverter.Replace(xaml, match =>
+        {
+            var key = match.Groups["key"];
+            if (key.Success && !context.PlaceholderKeys.Contains(key.Value))
+            {
+                return match.Value; // 자리표시자가 아닌 리소스를 컨버터로 쓴다: 그대로 둔다.
+            }
+            else
+            {
+                propertyElementsRemoved++;
+                return new string(match.Value.Select(c => c is '\r' or '\n' ? c : ' ').ToArray());
+            }
+        });
+        xaml = PlaceholderInNonVisualProperty.Replace(xaml, match =>
+        {
+            propertyElementsRemoved++;
+            return new string(match.Value.Select(c => c is '\r' or '\n' ? c : ' ').ToArray());
+        });
+        xaml = PlaceholderInItemsPanel.Replace(xaml, match =>
+        {
+            propertyElementsRemoved++;
+            var newlines = new string(match.Value.Where(c => c is '\r' or '\n').ToArray());
+            return $"<{match.Groups["tag"].Value}><StackPanel/></{match.Groups["tag"].Value}>{newlines}";
+        });
+        if (propertyElementsRemoved > 0)
+        {
+            context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed,
+                Loc.T($"자리표시자가 들어갈 수 없는 속성 요소(Converter/Selector/ItemsPanel 등) {propertyElementsRemoved}개를 정리했습니다.", $"Cleaned up {propertyElementsRemoved} property element(s) (Converter/Selector/ItemsPanel, etc.) that cannot hold a placeholder."), null, null));
+        }
+        else
+        {
+            // 정리할 속성 요소 없음.
+        }
+
+        if (context.PlaceholderKeys.Count == 0)
+        {
+            return xaml;
+        }
+        else
+        {
+            // 키로 판단하는 정리 대상 후보 있음.
+        }
+
+        var attributesRemoved = 0;
+        xaml = PlaceholderResourceAttribute.Replace(xaml, match =>
+        {
+            if (!context.PlaceholderKeys.Contains(match.Groups["key"].Value))
+            {
+                return match.Value;
+            }
+            else
+            {
+                attributesRemoved++;
+                return new string(match.Value.Select(c => c is '\r' or '\n' ? c : ' ').ToArray()); // 줄 수를 유지한다.
+            }
+        });
+        if (attributesRemoved > 0)
+        {
+            context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed,
+                Loc.T($"해석할 수 없는 사용자 타입 리소스를 값으로 쓰는 속성 {attributesRemoved}개를 제거했습니다.", $"Removed {attributesRemoved} attribute(s) whose value is a resource of an unresolvable user type."), null, null));
+        }
+        else
+        {
+            // 제거한 속성 없음.
+        }
+
+        if (!xaml.Contains("Converter", StringComparison.Ordinal))
+        {
+            return xaml;
+        }
+        else
+        {
+            // Converter 참조가 있다.
+        }
+
+        var removed = 0;
+        var result = ConverterResourceReference.Replace(xaml, match =>
+        {
+            if (!context.PlaceholderKeys.Contains(match.Groups["key"].Value))
+            {
+                return match.Value;
+            }
+            else
+            {
+                removed++;
+                // 앞에 쉼표가 있었으면 앞쪽을 지우고, 없으면(첫 인자) 뒤의 쉼표를 지운다. 둘 다 있으면 쉼표 하나는 남긴다.
+                return match.Groups["comma"].Success && match.Groups["trail"].Success ? ", " : string.Empty;
+            }
+        });
+        if (removed > 0)
+        {
+            context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed,
+                Loc.T($"해석할 수 없는 사용자 타입 컨버터를 쓰는 바인딩 {removed}개에서 Converter를 제거했습니다.", $"Removed the Converter from {removed} binding(s) that use a converter of an unresolvable user type."), null, null));
+        }
+        else
+        {
+            // 지운 것 없음.
+        }
+        return result;
     }
 
     /// <summary>한 문서(루트 또는 병합 사전 파일)를 전처리한다. 경고는 context에 누적한다.</summary>
@@ -245,11 +364,28 @@ public static partial class XamlPreprocessor
                     var inlined = InlineDictionary(source, filePath, context, depth, line, col);
                     edits.Add(new Edit(elementStart, end, inlined + NewlinesIn(xaml, elementStart, end)));
                 }
+                else if (IsUnresolvablePropertyElement(reader, context))
+                {
+                    // 소유자를 만들 수 없는 속성 요소(Blend 동작, 사용자 타입의 첨부 속성 요소): 통째로 지운다.
+                    var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
+                    edits.Add(new Edit(elementStart, end, BlankPreservingNewlines(xaml, elementStart, end)));
+                    warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed,
+                        Loc.T($"소유자 타입을 해석할 수 없어 {reader.Name} 속성 요소를 제거했습니다.", $"Removed the {reader.Name} property element because its owner type cannot be resolved."), lineInfo.LineNumber, lineInfo.LinePosition - 1));
+                }
                 else if (IsUnresolvableUserType(reader, context))
                 {
                     var (line, col) = (lineInfo.LineNumber, lineInfo.LinePosition - 1);
                     var typeName = reader.Name;
                     var tagged = depth == 0 && context.TagElements ? NewSourceElement(context, lineStarts, elementStart) : null;
+                    var placeholderKey = reader.GetAttribute("Key", XamlLanguageNamespace);
+                    if (!string.IsNullOrEmpty(placeholderKey))
+                    {
+                        context.PlaceholderKeys.Add(placeholderKey);
+                    }
+                    else
+                    {
+                        // 키 없는 요소(화면에 놓인 컨트롤).
+                    }
                     var placeholder = BuildPlaceholder(reader, xaml, lineStarts, lineInfo, uid: tagged == null ? null : UidValue(context.SourceElements.Count - 1));
                     var end = FindElementEnd(reader, xaml, lineStarts, lineInfo);
                     if (tagged != null)
@@ -321,18 +457,41 @@ public static partial class XamlPreprocessor
 
     /// <summary>접두사가 가리키는 clr-namespace의 타입이 해석되지 않는가(XAML 언어/WPF 네임스페이스나 prefix 미선언은 해당 없음).</summary>
     private static bool IsUnresolvableTypeReference(XmlReader reader, Context context, string prefix, string typeName)
+        => IsUnresolvableTypeInNamespace(reader.LookupNamespace(prefix), typeName, context);
+
+    /// <summary>
+    /// 네임스페이스의 타입을 만들 수 없는가. clr-namespace(프로젝트/참조 어셈블리)는 해석을 시도한다. 외부 라이브러리의 xmlns URI(WPF UI, Blend 동작 등)는 **프로젝트 어셈블리를 불러오지 않은 렌더(Tier 0)**에서만
+    /// "모르는 타입 = 만들 수 없음"으로 본다(Tier 1에서 모르는 타입은 오타 같은 진짜 오류라 그대로 보고한다). WPF/XAML/mc/d 같은 프레임워크 네임스페이스는 해당 없음.
+    /// </summary>
+    private static bool IsUnresolvableTypeInNamespace(string? ns, string typeName, Context context)
     {
-        var ns = reader.LookupNamespace(prefix);
-        if (ns == null || !ns.StartsWith(ClrNamespacePrefix, StringComparison.Ordinal))
+        if (string.IsNullOrEmpty(ns))
         {
             return false;
         }
-        else
+        else if (ns.StartsWith(ClrNamespacePrefix, StringComparison.Ordinal))
         {
             var type = context.Schema.GetXamlType(new XamlTypeName(WithProjectAssembly(ns, context), typeName));
             return type == null || type.IsUnknown || IsHiddenUserType(type, context);
         }
+        else if (context.ForeignNamespacePlaceholders && !IsFrameworkNamespace(ns))
+        {
+            var type = context.Schema.GetXamlType(new XamlTypeName(ns, typeName));
+            return type == null || type.IsUnknown;
+        }
+        else
+        {
+            return false;
+        }
     }
+
+    /// <summary>WPF가 직접 해석하는 프레임워크 xmlns(표현/XAML 언어/호환성/디자인 시간/2009 확장 등).</summary>
+    private static bool IsFrameworkNamespace(string ns)
+        => ns == PresentationNamespace || ns == XamlLanguageNamespace
+            || ns.StartsWith("http://schemas.openxmlformats.org/markup-compatibility", StringComparison.Ordinal)
+            || ns.StartsWith("http://schemas.microsoft.com/expression/blend/2008", StringComparison.Ordinal)
+            || ns.StartsWith("http://schemas.microsoft.com/winfx/", StringComparison.Ordinal)
+            || ns.StartsWith("http://schemas.microsoft.com/netfx/", StringComparison.Ordinal);
 
     /// <summary>
     /// TargetType/DataType이 해석 불가 타입을 가리키는 Style/ControlTemplate/DataTemplate이면 대체 문자열을 돌려준다(아니면 null).
@@ -439,6 +598,114 @@ public static partial class XamlPreprocessor
         return changed ? replaced : null;
     }
 
+    /// <summary>`{접두사:이름` 시작(마크업 확장의 여는 부분).</summary>
+    private static readonly Regex ExtensionStart = new(@"\G\{\s*(\w+):(\w+)", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// 속성 값 안의 `{접두사:이름 …}` 마크업 확장 중 **만들 수 없는**(사용자/라이브러리 타입이고 `이름`과 `이름Extension` 모두 해석 불가) 것을 `{x:Null}`로 바꾼다. 중첩된 중괄호는 짝을 맞춰 한 덩어리로 본다.
+    /// 값이 그 확장 하나뿐이면 null이 안 되는 속성일 수 있어 <paramref name="wholeValue"/>를 true로 돌려주고(호출자가 속성을 제거), `x` 접두사가 없으면 바꾸지 못하고 같은 방식으로 처리한다.
+    /// 바꿀 확장이 없으면 null.
+    /// </summary>
+    private static string? ReplaceUnresolvableExtensions(XmlReader reader, Context context, string attributeText, out bool wholeValue)
+    {
+        wholeValue = false;
+        var xPrefix = (reader as System.Xml.IXmlNamespaceResolver)?.LookupPrefix(XamlLanguageNamespace) is { Length: > 0 } declared ? declared : (reader.LookupNamespace("x") == XamlLanguageNamespace ? "x" : null);
+        var valueStart = attributeText.IndexOfAny(new[] { '"', '\'' });
+        var valueEnd = attributeText.LastIndexOfAny(new[] { '"', '\'' });
+        if (valueStart < 0 || valueEnd <= valueStart)
+        {
+            return null;
+        }
+        else
+        {
+            // 값 구간 있음.
+        }
+
+        var builder = new StringBuilder();
+        var changed = 0;
+        var firstStart = -1;
+        var lastEnd = -1;
+        var index = 0;
+        while (index < attributeText.Length)
+        {
+            var match = index > valueStart && index < valueEnd && attributeText[index] == '{' ? ExtensionStart.Match(attributeText, index) : Match.Empty;
+            if (match.Success
+                && IsUnresolvableTypeReference(reader, context, match.Groups[1].Value, match.Groups[2].Value)
+                && IsUnresolvableTypeReference(reader, context, match.Groups[1].Value, match.Groups[2].Value + "Extension"))
+            {
+                var depth = 0;
+                var end = -1;
+                for (var i = index; i < valueEnd; i++)
+                {
+                    if (attributeText[i] == '{')
+                    {
+                        depth++;
+                    }
+                    else if (attributeText[i] == '}' && --depth == 0)
+                    {
+                        end = i + 1;
+                        break;
+                    }
+                    else
+                    {
+                        // 중괄호 아님.
+                    }
+                }
+                if (end > 0)
+                {
+                    changed++;
+                    firstStart = firstStart < 0 ? index : firstStart;
+                    lastEnd = end;
+                    builder.Append(xPrefix == null ? string.Empty : $"{{{xPrefix}:Null}}");
+                    index = end;
+                    continue;
+                }
+                else
+                {
+                    // 짝이 맞지 않는 중괄호: 건드리지 않는다.
+                }
+            }
+            else
+            {
+                // 이 위치는 대체 대상 아님.
+            }
+            builder.Append(attributeText[index]);
+            index++;
+        }
+
+        if (changed == 0)
+        {
+            return null;
+        }
+        else
+        {
+            wholeValue = xPrefix == null || (changed == 1 && attributeText[(valueStart + 1)..firstStart].Trim().Length == 0 && attributeText[lastEnd..valueEnd].Trim().Length == 0);
+            return builder.ToString();
+        }
+    }
+
+    /// <summary>자리표시자(사용자 타입 리소스)를 값으로 가리키는 속성 전체: `속성="{StaticResource 키}"`. 키 없는 쪽(공백 포함)은 앞 공백까지 함께 지운다.</summary>
+    private static readonly Regex PlaceholderResourceAttribute = new(@"\s+[\w:.]+\s*=\s*(?<q>[""'])\{\s*(?:StaticResource|DynamicResource)\s+(?<key>[\w.]+)\s*\}\k<q>", RegexOptions.CultureInvariant);
+
+    /// <summary>자리표시자 Border 하나(<see cref="BuildPlaceholder"/>가 만드는 모양).</summary>
+    private const string PlaceholderBorderPattern = @"<Border xmlns=""[^""]*""[^>]*><TextBlock [^>]*/></Border>";
+
+    /// <summary>컨버터/선택기/검증 규칙처럼 **자리표시자를 값으로 둘 수 없는** 속성 요소 안에 자리표시자가 들어간 형태.</summary>
+    private static readonly Regex PlaceholderInNonVisualProperty = new(
+        @"<(?<tag>[\w:]+\.(?:Converter|ItemTemplateSelector|ItemContainerStyleSelector|HeaderTemplateSelector|ContentTemplateSelector|CellTemplateSelector|ValidationRules))>\s*(?:" + PlaceholderBorderPattern + @"\s*)+</\k<tag>>",
+        RegexOptions.CultureInvariant | RegexOptions.Singleline);
+
+    /// <summary>
+    /// 컨버터가 자리표시자(사용자 타입)인 `MultiBinding`을 담은 속성 요소(`&lt;TextBlock.Text&gt;&lt;MultiBinding…&gt;…&lt;/TextBlock.Text&gt;`). MultiBinding은 컨버터 없이는 값을 만들 수 없어(파싱 때 예외)
+    /// `Converter`만 지우는 방법이 통하지 않는다: 그 속성 요소를 통째로 지운다. 컨버터가 `Converter="{StaticResource 키}"`(속성)이면 그룹 key에 키가 잡히고, 속성 요소(`&lt;MultiBinding.Converter&gt;`)이면 자리표시자 Border가 잡힌다.
+    /// </summary>
+    private static readonly Regex MultiBindingWithPlaceholderConverter = new(
+        @"<(?<prop>[\w:]+\.\w+)>\s*<(?<mb>(?:\w+:)?MultiBinding)\b(?:(?!</\k<mb>>).)*?(?:Converter\s*=\s*[""']\{\s*(?:StaticResource|DynamicResource)\s+(?<key>[\w.]+)\s*\}[""']|<(?:\w+:)?MultiBinding\.Converter>\s*(?<inline>" + PlaceholderBorderPattern + @"))(?:(?!</\k<mb>>).)*</\k<mb>>\s*</\k<prop>>",
+        RegexOptions.CultureInvariant | RegexOptions.Singleline);
+
+    /// <summary>`ItemsPanelTemplate` 안에 자리표시자가 있으면 Panel이 아니라서 실패한다: 기본 패널로 바꾼다.</summary>
+    private static readonly Regex PlaceholderInItemsPanel = new(@"<(?<tag>(?:\w+:)?ItemsPanelTemplate)>\s*" + PlaceholderBorderPattern + @"\s*</\k<tag>>", RegexOptions.CultureInvariant | RegexOptions.Singleline);
+
     private static string? ReplaceUnresolvableTypeReferences(XmlReader reader, Context context, string attributeText)
     {
         var changed = false;
@@ -520,16 +787,16 @@ public static partial class XamlPreprocessor
 
     /// <summary>clr-namespace 타입인데 어셈블리를 찾지 못해 XamlReader가 만들 수 없는 요소인가(속성 요소 `Type.Prop` 제외).</summary>
     private static bool IsUnresolvableUserType(XmlReader reader, Context context)
+        => !reader.LocalName.Contains('.') && IsUnresolvableTypeInNamespace(reader.NamespaceURI, reader.LocalName, context);
+
+    /// <summary>
+    /// `&lt;i:Interaction.Triggers&gt;`, `&lt;local:Att.Value&gt;`처럼 **소유자 타입을 만들 수 없는** 속성 요소인가. 그 속성 요소만 통째로 지워야 나머지가 그려진다
+    /// (소유자 타입이 없으면 첨부 속성/속성 요소를 해석하지 못해 파싱 전체가 실패한다).
+    /// </summary>
+    private static bool IsUnresolvablePropertyElement(XmlReader reader, Context context)
     {
-        if (!reader.NamespaceURI.StartsWith(ClrNamespacePrefix, StringComparison.Ordinal) || reader.LocalName.Contains('.'))
-        {
-            return false;
-        }
-        else
-        {
-            var type = context.Schema.GetXamlType(new XamlTypeName(WithProjectAssembly(reader.NamespaceURI, context), reader.LocalName));
-            return type == null || type.IsUnknown || IsHiddenUserType(type, context);
-        }
+        var dot = reader.LocalName.IndexOf('.');
+        return dot > 0 && IsUnresolvableTypeInNamespace(reader.NamespaceURI, reader.LocalName[..dot], context);
     }
 
     /// <summary>
@@ -564,6 +831,7 @@ public static partial class XamlPreprocessor
 
         // 사용자 컨트롤(`assembly=` 없는 clr-namespace)의 Click 같은 이벤트도 찾으려면 프로젝트 어셈블리 이름을 붙여 조회해야 한다.
         var elementNamespace = WithProjectAssembly(reader.NamespaceURI, context);
+        var rawElementNamespace = reader.NamespaceURI;
         var elementLocal = reader.LocalName;
         while (reader.MoveToNextAttribute())
         {
@@ -669,6 +937,7 @@ public static partial class XamlPreprocessor
                 }
                 else if (replacedStatic != null)
                 {
+                    attributeEdited = true;
                     edits.Add(new Edit(attributeStart, attributeEnd, replacedStatic));
                     context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, Loc.T($"{reader.Name} 속성의 해석할 수 없는 {{x:Static}} 참조를 {{x:Null}}로 대체했습니다.", $"Replaced an unresolvable {{x:Static}} reference in the {reader.Name} attribute with {{x:Null}}."), lineInfo.LineNumber, lineInfo.LinePosition));
                 }
@@ -680,6 +949,46 @@ public static partial class XamlPreprocessor
             else
             {
                 // {x:Static} 대체 대상 아님.
+            }
+
+            if (code == null && !attributeEdited && reader.Value.Contains('{') && reader.Value.Contains(':'))
+            {
+                // `{local:Loc Title}`, `Converter={local:Conv}`처럼 만들 수 없는 사용자/라이브러리 마크업 확장: `{x:Null}`로 바꾸거나(값이 그 확장뿐이면) 속성을 제거한다.
+                var attributeStart = ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition);
+                var attributeEnd = FindAttributeEnd(xaml, attributeStart);
+                var replacedExtension = ReplaceUnresolvableExtensions(reader, context, xaml.Substring(attributeStart, attributeEnd - attributeStart), out var wholeExtension);
+                if (replacedExtension != null && wholeExtension)
+                {
+                    code = WarningCodes.PlaceholderUsed; // 아래에서 속성을 제거한다.
+                }
+                else if (replacedExtension != null)
+                {
+                    attributeEdited = true;
+                    edits.Add(new Edit(attributeStart, attributeEnd, replacedExtension));
+                    context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, Loc.T($"{reader.Name} 속성의 해석할 수 없는 마크업 확장을 {{x:Null}}로 대체했습니다.", $"Replaced an unresolvable markup extension in the {reader.Name} attribute with {{x:Null}}."), lineInfo.LineNumber, lineInfo.LinePosition));
+                }
+                else
+                {
+                    // 해석 가능하거나 대체할 확장 없음.
+                }
+            }
+            else
+            {
+                // 마크업 확장 대체 대상 아님.
+            }
+
+            if (code == null && !attributeEdited && rawElementNamespace == XamlLanguageNamespace && elementLocal == "Array" && reader.NamespaceURI.Length == 0 && reader.LocalName == "Type"
+                && PlainTypeReference.Match(reader.Value) is { Success: true } arrayType && IsUnresolvableTypeReference(reader, context, arrayType.Groups[1].Value, arrayType.Groups[2].Value))
+            {
+                // `<x:Array Type="local:VM">`: 요소는 자리표시자(FrameworkElement)가 되므로 배열 형식도 그것으로 맞춘다.
+                var arrayStart = ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition);
+                var arrayEnd = FindAttributeEnd(xaml, arrayStart);
+                edits.Add(new Edit(arrayStart, arrayEnd, $"Type=\"{StandInStyleTarget}\""));
+                attributeEdited = true;
+            }
+            else
+            {
+                // x:Array 형식 대체 대상 아님.
             }
 
             if (code != null)
@@ -885,6 +1194,7 @@ public static partial class XamlPreprocessor
     {
         var typeName = reader.Name;
         var inherited = new StringBuilder();
+        var inheritedNames = new HashSet<string>(StringComparer.Ordinal); // 같은 속성을 두 번 쓰면 XML 오류(중복 속성)라 기본값과 겹치지 않게 기억한다.
         if (reader.HasAttributes)
         {
             while (reader.MoveToNextAttribute())
@@ -897,6 +1207,7 @@ public static partial class XamlPreprocessor
                     var start = ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition);
                     var end = FindAttributeEnd(xaml, start);
                     inherited.Append(' ').Append(xaml, start, end - start);
+                    inheritedNames.Add(reader.LocalName);
                 }
                 else
                 {
@@ -924,7 +1235,9 @@ public static partial class XamlPreprocessor
         var color = error == null ? PlaceholderBorderColor : ErrorPlaceholderColor;
         var fill = error == null ? PlaceholderFillColor : ErrorPlaceholderFillColor;
         var trimming = error == null ? "TextTrimming=\"CharacterEllipsis\"" : "TextWrapping=\"Wrap\"";
-        return $"<Border xmlns=\"{PresentationNamespace}\" BorderBrush=\"{color}\" BorderThickness=\"1\" Background=\"{fill}\" MinWidth=\"40\" MinHeight=\"22\"{inherited}>"
+        // 사용자 요소가 이미 지정한 속성(예: MinWidth="80")은 기본값을 쓰지 않는다(중복 속성은 XML 오류).
+        string Default(string name, string value) => inheritedNames.Contains(name) ? string.Empty : $" {name}=\"{value}\"";
+        return $"<Border xmlns=\"{PresentationNamespace}\"{Default("BorderBrush", color)}{Default("BorderThickness", "1")}{Default("Background", fill)}{Default("MinWidth", "40")}{Default("MinHeight", "22")}{inherited}>"
             + $"<TextBlock Text=\"{label}\" Foreground=\"{color}\" FontSize=\"11\" Margin=\"4,2\" {trimming}/></Border>";
     }
 

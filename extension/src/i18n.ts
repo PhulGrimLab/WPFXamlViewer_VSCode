@@ -60,6 +60,8 @@ export const STRINGS = {
         'host.disposed': 'HostClient가 종료되었습니다.',
         'host.noMessage': '(메시지 없음)',
         // 웹뷰(도구 모음)
+        'web.refresh': '새로고침',
+        'web.refreshTitle': '다시 렌더 (실패한 빌드도 다시 시도)',
         'web.zoomOut': '축소',
         'web.zoomIn': '확대',
         'web.fit': '창에 맞춤',
@@ -77,6 +79,7 @@ export const STRINGS = {
         'web.busy': '렌더 중...',
         // 언어 전환
         'consent.ask': 'WPF XAML Live Preview: "{0}" 프로젝트를 미리 보려면 이 프로젝트의 빌드 산출물(DLL)을 불러오고 필요하면 빌드해야 합니다. 프로젝트 코드가 실행됩니다 — 저장소에 포함된 DLL도 빌드 없이 바로 실행될 수 있으니 출처를 아는 프로젝트만 허용하세요. 허용할까요?',
+        'consent.hint': '프로젝트의 컨트롤을 실제로 그리려면 이 프로젝트의 코드 실행을 허용해야 합니다. 미리보기 툴바의 "새로고침"을 누르면 허용 여부를 다시 묻습니다.',
         'consent.allow': '허용',
         'consent.deny': '지금은 안 함',
         'consent.denied': '$(shield) 프로젝트 코드 실행 대기',
@@ -120,6 +123,8 @@ export const STRINGS = {
         'host.spawn': 'Could not start the host: {0}',
         'host.disposed': 'HostClient has been disposed.',
         'host.noMessage': '(no message)',
+        'web.refresh': 'Refresh',
+        'web.refreshTitle': 'Render again (also retries a failed build)',
         'web.zoomOut': 'Zoom out',
         'web.zoomIn': 'Zoom in',
         'web.fit': 'Fit to window',
@@ -136,6 +141,7 @@ export const STRINGS = {
         'web.openDoc': 'Open a XAML document.',
         'web.busy': 'Rendering...',
         'consent.ask': 'WPF XAML Live Preview: To preview project "{0}", its build output (DLL) must be loaded and the project may need to be built. Project code will run — a DLL committed to the repository can run immediately without a build, so allow only projects you know. Allow?',
+        'consent.hint': 'To render this project controls for real, allow the project code to run. Click "Refresh" in the preview toolbar to be asked again.',
         'consent.allow': 'Allow',
         'consent.deny': 'Not now',
         'consent.denied': '$(shield) Waiting for project code approval',

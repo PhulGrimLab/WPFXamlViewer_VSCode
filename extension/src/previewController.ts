@@ -244,6 +244,9 @@ export class PreviewController implements vscode.Disposable {
             case 'viewState':
                 this._viewState = { zoom: message.zoom, background: message.background };
                 break;
+            case 'refresh':
+                this.refresh();
+                break;
             case 'setSize':
                 this._size = { width: message.width ?? undefined, height: message.height ?? undefined };
                 this._renderNow();
@@ -358,7 +361,11 @@ export class PreviewController implements vscode.Disposable {
     private _showFailure(document: vscode.TextDocument, error: Error): void {
         const missing = error instanceof HostRequestError ? this._missingBuildAction(document, error.projectReason, true) : 'none';
         this._setStatus(t('preview.error'), new vscode.ThemeColor('statusBarItem.errorBackground'));
-        this._post({ type: 'error', message: error.message });
+        // 프로젝트 코드 실행을 아직 허용하지 않아 프로젝트 타입을 못 만든 것이 원인일 수 있다: 해결 방법을 함께 알려 준다.
+        const consentHint = this._projectGate(document).needsConsent ? `
+
+${t('consent.hint')}` : '';
+        this._post({ type: 'error', message: error.message + consentHint });
         if (missing !== 'none') {
             // 빌드 산출물이 없어 실패했다: 자동 빌드(또는 빌드 필요/실패 안내)로 이어간다. 원래 XAML 오류도 Problems에 함께 남긴다.
             this._reportMissingBuild(document, missing, true);
@@ -489,6 +496,23 @@ export class PreviewController implements vscode.Disposable {
                 this._setStatus(t('consent.denied'), undefined);
             }
         });
+    }
+
+    /**
+     * 다시 렌더한다(툴바의 새로고침 버튼/명령 **WPF XAML: Refresh Preview**). 렌더가 실패했을 때 고친 뒤 다시 시도하는 용도라, 자동 빌드의 실패/대기 기록과
+     * 알림·허용 질문 기록을 지워 빌드와 허용 확인도 처음부터 다시 시도한다. 열린 미리보기가 없으면 아무것도 하지 않는다.
+     */
+    refresh(): void {
+        if (!this._panel || !this._document) {
+            return;
+        } else {
+            this._debouncer.cancel();
+            this._autoBuild.clear();
+            this._notified.clear();
+            this._consentAsked.clear();
+            this._projectCache.clear();
+            this._renderNow();
+        }
     }
 
     /** 테스트용: 이 프로젝트(또는 워크스페이스 폴더)의 코드 실행을 허용한 것으로 기록한다. */
