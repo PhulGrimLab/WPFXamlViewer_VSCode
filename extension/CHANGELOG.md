@@ -1,5 +1,20 @@
 # 변경 이력
 
+## 0.1.7 (2026-10-19, 미리보기)
+### 추가
+- **미리보기 툴바에 ↻ 새로고침 버튼**과 명령 **WPF XAML: 미리보기 새로고침**(`wpfXamlViewer.refreshPreview`): 렌더가 실패했을 때 고친 뒤 다시 그린다. 실패했던 자동 빌드와 프로젝트 코드 실행 허용 확인도 처음부터 다시 시도한다. 프로젝트 코드 실행을 아직 허용하지 않아 실패한 경우 오류 문구에 해결 방법을 함께 보여 준다.
+
+### 수정
+- **프로젝트 DLL을 불러오지 않은(미신뢰/허용 전/빌드 전) 미리보기가 만들 수 없는 프로젝트·라이브러리 타입을 참조하는 흔한 패턴 하나 때문에 통째로 실패하던 문제를 폭넓게 줄였다.** 이제 아래는 그 부분만 대체/제거하고 나머지를 그리며, 바꾼 내용은 경고로 알린다.
+  - 컨버터: `Converter={StaticResource 사용자컨버터}`, `MultiBinding Converter="{StaticResource …}"`, `<Binding.Converter><local:Conv/></Binding.Converter>`, `<MultiBinding.Converter>`(MultiBinding은 그것을 담은 속성 요소째 제거)
+  - 사용자 타입 리소스를 값으로 쓰는 속성(`ItemTemplateSelector`, 사용자 브러시 등), 자리표시자가 들어갈 수 없는 `ItemsPanelTemplate`
+  - 사용자 정의 마크업 확장(`{local:Loc Title}`, `Converter={local:Conv}`)은 `{x:Null}`(또는 속성 제거), 사용자 타입의 `{x:Static}`과 첨부 속성, 사용자 타입 `x:Array`
+  - 외부 라이브러리(WPF UI, Blend 동작 등)의 컨트롤·첨부 속성·`i:Interaction.Triggers` 같은 속성 요소(프로젝트에 속한 XAML일 때만; 프로젝트 없는 낱개 XAML의 오타는 계속 오류로 보고한다)
+  - `{StaticResource 없는키}`(라이브러리 테마 사전의 키 등): 그 속성만 빼고 계속
+  - 자리표시자가 사용자 요소의 `MinWidth` 같은 속성과 겹쳐 XML 오류(중복 속성)가 나던 문제
+  - 실측: PathDock의 뷰 13개 중 신뢰하지 않은 모드에서 그려지던 것이 4개에서 13개로, AT-Patch_Simulation의 두 `MainWindow.xaml`도 그려진다.
+- 알려진 한계: 요소 형태의 사용자 마크업 확장(`<TextBlock.Text><local:Loc Key="x"/></TextBlock.Text>`)은 아직 처리하지 않는다. 프로젝트를 빌드하고 코드 실행을 허용하면(Tier 1) 모두 실제 컨트롤로 그려진다.
+
 ## 0.1.6 (2026-10-19, 미리보기)
 ### 수정
 - **프로젝트 DLL을 불러오지 않은(자리표시자) 미리보기가 사용자 타입의 `{x:Static}`과 첨부 속성 하나 때문에 통째로 실패하던 문제**: `Converter={x:Static local:InverseBool.Instance}`처럼 프로젝트 안의 타입을 가리키는 `{x:Static}`은 `{x:Null}`로 대체하고(값이 그 참조뿐이면 그 속성만 제거), `local:AutoScroll.Enabled="True"` 같은 프로젝트 타입의 첨부 속성은 그 속성만 제거한 채 나머지를 그린다. 대체/제거한 내용은 경고로 알린다. (프로젝트 코드 실행을 허용하기 전이나 빌드 산출물이 없을 때의 미리보기가 해당한다.)

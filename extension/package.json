@@ -2,7 +2,7 @@
   "name": "wpf-xaml-live-preview",
   "displayName": "WPF XAML Live Preview",
   "description": "%extension.description%",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "publisher": "phulgrimlab",
   "license": "GPL-3.0-only",
   "preview": true,
@@ -100,6 +100,10 @@
       {
         "command": "wpfXamlViewer.resetProjectConsent",
         "title": "%command.resetProjectConsent.title%"
+      },
+      {
+        "command": "wpfXamlViewer.refreshPreview",
+        "title": "%command.refreshPreview.title%"
       }
     ],
     "configuration": {
