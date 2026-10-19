@@ -2,7 +2,7 @@
   "name": "wpf-xaml-live-preview",
   "displayName": "WPF XAML Live Preview",
   "description": "%extension.description%",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "publisher": "phulgrimlab",
   "license": "GPL-3.0-only",
   "preview": true,
@@ -301,7 +301,7 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "신뢰되지 않은 폴더에서는 프로젝트 DLL을 불러오지 않고 사용자 정의 컨트롤을 자리표시자로 표시합니다.",
+      "description": "%capabilities.untrustedWorkspaces.description%",
       "restrictedConfigurations": [
         "wpfXamlViewer.buildExtraArgs"
       ]
