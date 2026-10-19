@@ -9,7 +9,7 @@
 > 개발 방침은 [CLAUDE.md](./CLAUDE.md).
 
 ## 설치해서 쓰기 (이미 만들어진 `.vsix`가 있을 때)
-1. VS Code 확장 뷰 → `...` → **VSIX에서 설치** (또는 `code --install-extension .\wpf-xaml-live-preview-0.1.5.vsix`).
+1. VS Code 확장 뷰 → `...` → **VSIX에서 설치** (또는 `code --install-extension .\wpf-xaml-live-preview-0.1.6.vsix`).
 2. **.NET 10 Desktop Runtime**이 필요하다(없으면 확장이 안내한다).
 3. `.xaml` 파일에서 명령 팔레트 → **WPF XAML: Open Preview**.
 
@@ -52,7 +52,7 @@ ZIP으로 받았을 때 "스크립트를 실행할 수 없다"는 오류가 나�
 
 ### 4) 설치
 ```powershell
-code --install-extension .\artifacts\wpf-xaml-live-preview-0.1.5.vsix
+code --install-extension .\artifacts\wpf-xaml-live-preview-0.1.6.vsix
 ```
 (또는 VS Code 확장 뷰 → `...` → **VSIX에서 설치**.) 실행 PC에는 **.NET 10 Desktop Runtime**이 필요하다.
 
