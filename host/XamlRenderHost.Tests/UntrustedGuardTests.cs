@@ -128,6 +128,20 @@ public class UntrustedGuardTests
     }
 
     [TestMethod]
+    public void G10_UserTypeStaticAndAttachedProperty_InUntrustedMode_DoNotFailTheWholeRender()
+    {
+        // 프로젝트 DLL을 불러오지 않은(Tier 0) 렌더에서 사용자 타입의 {x:Static}과 첨부 속성 하나 때문에 미리보기 전체가 실패하면 안 된다.
+        var xaml = $"<StackPanel {Ns} xmlns:local=\"clr-namespace:Nope.App\" Width=\"150\">"
+            + "<TextBox IsEnabled=\"{Binding Running, Converter={x:Static local:InverseBool.Instance}}\" local:AutoScroll.Enabled=\"True\" Text=\"a\"/>"
+            + "<TextBlock Text=\"{x:Static local:Strings.Title}\"/></StackPanel>";
+        var result = RenderTestHelper.Render(xaml);
+        Assert.AreEqual(150, result.PixelWidth);
+        var messages = string.Join("|", result.Warnings!.Where(w => w.Code == WarningCodes.PlaceholderUsed).Select(w => w.Message));
+        StringAssert.Contains(messages, "x:Static", "{x:Static} 대체가 경고로 알려져야 한다");
+        StringAssert.Contains(messages, "AutoScroll.Enabled", "첨부 속성 제거가 경고로 알려져야 한다");
+    }
+
+    [TestMethod]
     public void G09_MergedDictionaryThatIsNotXml_BecomesAWarning_NotADocumentError()
     {
         var directory = Path.Combine(Path.GetTempPath(), "xamlviewer-guard-" + Guid.NewGuid().ToString("N"));

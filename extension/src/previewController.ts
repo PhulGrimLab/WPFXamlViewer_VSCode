@@ -190,6 +190,7 @@ export class PreviewController implements vscode.Disposable {
         }
         this._autoBuild.clear(); // 사용자가 미리보기를 다시 열었다: 이전 빌드 실패 기록을 지우고 새로 판단한다.
         this._notified.clear();
+        this._consentAsked.clear(); // 이전에 "지금은 안 함"을 눌렀어도 미리보기를 다시 열면 허용 여부를 다시 묻는다.
         this._renderNow();
     }
 

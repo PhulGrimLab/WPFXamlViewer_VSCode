@@ -309,6 +309,9 @@ public static partial class XamlPreprocessor
     /// <summary>`{x:Type 접두사:이름}` 참조(접두사/이름을 캡처). x 접두사는 일반적으로 x지만 다른 이름일 수 있어 그룹 1로 받는다.</summary>
     private static readonly Regex XTypeReference = new(@"\{\s*(\w+):Type\s+(\w+):([\w.]+)\s*\}", RegexOptions.CultureInvariant);
 
+    /// <summary>`{x:Static 접두사:타입.멤버}` 참조(x 접두사, 타입 접두사, 타입 이름, 멤버를 캡처).</summary>
+    private static readonly Regex XStaticReference = new(@"\{\s*(\w+):Static\s+(\w+):(\w+)\.\w+\s*\}", RegexOptions.CultureInvariant);
+
     /// <summary>`TargetType="접두사:이름"`처럼 마크업 확장 없이 쓴 타입 참조.</summary>
     private static readonly Regex PlainTypeReference = new(@"^\s*(\w+):([\w.]+)\s*$", RegexOptions.CultureInvariant);
 
@@ -411,6 +414,31 @@ public static partial class XamlPreprocessor
     /// 속성 값 속의 `{x:Type 접두사:이름}` 중 해석 불가 타입을 `{x:Type FrameworkElement}`로 바꾼 속성 원문을 돌려준다(바꿀 것이 없으면 null).
     /// 원문 텍스트(따옴표 포함)를 대상으로 하므로 호출자가 속성 구간 전체를 이 결과로 교체한다.
     /// </summary>
+    /// <summary>
+    /// `{x:Static local:사용자타입.멤버}`의 사용자 타입을 만들 수 없으면(Tier 0: 프로젝트 DLL을 불러오지 않았다) 파싱 전체가 "값 제공 예외"로 실패한다. 그 참조를 `{x:Null}`로 바꿔(예: `Converter={x:Static local:InverseBool.Instance}`는
+    /// 컨버터 없음이 된다) 나머지는 그려지게 한다. 속성 값이 그 참조 하나뿐이면 null일 수 없는 속성이 있어 `{x:Null}` 대신 속성을 통째로 제거해야 하므로 <paramref name="wholeValue"/>를 true로 돌려준다.
+    /// 바꿀 참조가 없으면 null.
+    /// </summary>
+    private static string? ReplaceUnresolvableStaticReferences(XmlReader reader, Context context, string attributeText, out bool wholeValue)
+    {
+        var changed = false;
+        var replaced = XStaticReference.Replace(attributeText, match =>
+        {
+            if (reader.LookupNamespace(match.Groups[1].Value) == XamlLanguageNamespace
+                && IsUnresolvableTypeReference(reader, context, match.Groups[2].Value, match.Groups[3].Value))
+            {
+                changed = true;
+                return $"{{{match.Groups[1].Value}:Null}}";
+            }
+            else
+            {
+                return match.Value;
+            }
+        });
+        wholeValue = changed && XStaticReference.IsMatch(reader.Value) && XStaticReference.Replace(reader.Value, string.Empty).Trim().Length == 0;
+        return changed ? replaced : null;
+    }
+
     private static string? ReplaceUnresolvableTypeReferences(XmlReader reader, Context context, string attributeText)
     {
         var changed = false;
@@ -550,6 +578,7 @@ public static partial class XamlPreprocessor
             }
 
             string? code = null;
+            var attributeEdited = false;
             if (reader.NamespaceURI == XamlLanguageNamespace && RemovedXamlAttributes.Contains(reader.LocalName))
             {
                 code = WarningCodes.RemovedClassAttribute;
@@ -569,6 +598,12 @@ public static partial class XamlPreprocessor
                 // 라이브러리의 첨부 이벤트: `materialDesign:DialogHost.DialogClosingAttached="핸들러"`처럼 접두사가 붙어 소유자 타입이 그 네임스페이스에 있다.
                 code = WarningCodes.RemovedEventHandler;
             }
+            else if (reader.Prefix.Length > 0 && reader.LocalName.Contains('.')
+                && IsUnresolvableTypeReference(reader, context, reader.Prefix, reader.LocalName[..reader.LocalName.IndexOf('.')]))
+            {
+                // 사용자 타입의 첨부 속성(`local:AutoScroll.Enabled="True"`): 소유자 타입을 만들 수 없으면(Tier 0: 프로젝트 DLL을 불러오지 않았다) 속성 하나 때문에 파싱 전체가 실패하므로 그 속성만 제거한다.
+                code = WarningCodes.PlaceholderUsed;
+            }
             else
             {
                 // 유지할 속성.
@@ -587,6 +622,7 @@ public static partial class XamlPreprocessor
                         : $"{ApplicationPackPrefix}{context.ProjectAssemblyName};component/{match.Groups["rest"].Value}");
                 if (rewritten != original)
                 {
+                    attributeEdited = true;
                     edits.Add(new Edit(attributeStart, attributeEnd, rewritten));
                 }
                 else
@@ -607,6 +643,7 @@ public static partial class XamlPreprocessor
                 var replacedAttribute = ReplaceUnresolvableTypeReferences(reader, context, xaml.Substring(attributeStart, attributeEnd - attributeStart));
                 if (replacedAttribute != null)
                 {
+                    attributeEdited = true;
                     edits.Add(new Edit(attributeStart, attributeEnd, replacedAttribute));
                     context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, Loc.T($"{reader.Name} 속성의 해석할 수 없는 타입 참조를 {StandInStyleTarget}로 대체했습니다.", $"Replaced an unresolvable type reference in the {reader.Name} attribute with {StandInStyleTarget}."), lineInfo.LineNumber, lineInfo.LinePosition));
                 }
@@ -618,6 +655,31 @@ public static partial class XamlPreprocessor
             else
             {
                 // 타입 참조 없음.
+            }
+
+            if (code == null && !attributeEdited && reader.Value.Contains(":Static", StringComparison.Ordinal))
+            {
+                // `{x:Static local:Foo.Bar}`의 Foo를 만들 수 없으면(Tier 0) 참조를 {x:Null}로 바꾼다. 값이 그 참조뿐이면 속성을 제거한다.
+                var attributeStart = ToOffset(lineStarts, lineInfo.LineNumber, lineInfo.LinePosition);
+                var attributeEnd = FindAttributeEnd(xaml, attributeStart);
+                var replacedStatic = ReplaceUnresolvableStaticReferences(reader, context, xaml.Substring(attributeStart, attributeEnd - attributeStart), out var wholeValue);
+                if (replacedStatic != null && wholeValue)
+                {
+                    code = WarningCodes.PlaceholderUsed; // 아래에서 속성을 제거한다.
+                }
+                else if (replacedStatic != null)
+                {
+                    edits.Add(new Edit(attributeStart, attributeEnd, replacedStatic));
+                    context.Warnings.Add(new RenderWarning(WarningCodes.PlaceholderUsed, Loc.T($"{reader.Name} 속성의 해석할 수 없는 {{x:Static}} 참조를 {{x:Null}}로 대체했습니다.", $"Replaced an unresolvable {{x:Static}} reference in the {reader.Name} attribute with {{x:Null}}."), lineInfo.LineNumber, lineInfo.LinePosition));
+                }
+                else
+                {
+                    // 해석 가능하거나 대체할 참조 없음.
+                }
+            }
+            else
+            {
+                // {x:Static} 대체 대상 아님.
             }
 
             if (code != null)
