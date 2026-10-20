@@ -12,7 +12,7 @@
 > Development policy: [CLAUDE.md](./CLAUDE.md).
 
 ## Install and use (when you already have a `.vsix`)
-1. VS Code Extensions view → `...` → **Install from VSIX** (or `code --install-extension .\wpf-xaml-live-preview-0.1.8.vsix`).
+1. VS Code Extensions view → `...` → **Install from VSIX** (or `code --install-extension .\wpf-xaml-live-preview-0.1.9.vsix`).
 2. The **.NET 10 Desktop Runtime** is required (the extension tells you if it is missing).
 3. In a `.xaml` file, run **WPF XAML: Open Preview** from the Command Palette.
 
@@ -55,7 +55,7 @@ The first run downloads packages and takes a few minutes; later runs take about 
 
 ### 4) Install
 ```powershell
-code --install-extension .\artifacts\wpf-xaml-live-preview-0.1.8.vsix
+code --install-extension .\artifacts\wpf-xaml-live-preview-0.1.9.vsix
 ```
 (or VS Code Extensions view → `...` → **Install from VSIX**.) The target PC needs the **.NET 10 Desktop Runtime**.
 

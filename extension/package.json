@@ -2,7 +2,7 @@
   "name": "wpf-xaml-live-preview",
   "displayName": "WPF XAML Live Preview",
   "description": "%extension.description%",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "publisher": "phulgrimlab",
   "license": "GPL-3.0-only",
   "preview": true,
@@ -47,7 +47,8 @@
     "commands": [
       {
         "command": "wpfXamlViewer.openPreview",
-        "title": "%command.openPreview.title%"
+        "title": "%command.openPreview.title%",
+        "icon": "$(open-preview)"
       },
       {
         "command": "wpfXamlViewer.buildProject",
@@ -103,7 +104,8 @@
       },
       {
         "command": "wpfXamlViewer.refreshPreview",
-        "title": "%command.refreshPreview.title%"
+        "title": "%command.refreshPreview.title%",
+        "icon": "$(refresh)"
       }
     ],
     "configuration": {
@@ -269,6 +271,18 @@
           "command": "wpfXamlViewer.cleanProjectRelease",
           "when": "resourceExtname == .csproj && isWorkspaceTrusted || (resourceExtname == .sln || resourceExtname == .slnx) && isWorkspaceTrusted || resourceExtname == .slnf && isWorkspaceTrusted",
           "group": "3_clean@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "wpfXamlViewer.openPreview",
+          "when": "resourceExtname == .xaml",
+          "group": "navigation"
+        },
+        {
+          "command": "wpfXamlViewer.refreshPreview",
+          "when": "resourceExtname == .xaml && wpfXamlViewer.previewOpen",
+          "group": "navigation"
         }
       ]
     },
