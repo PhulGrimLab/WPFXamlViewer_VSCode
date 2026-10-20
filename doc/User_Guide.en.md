@@ -75,7 +75,9 @@ You need: **.NET SDK 10**, **.NET 10 Desktop Runtime** (runs the preview host), 
 - **Render size**: enter W/H and press **Apply**. Leave empty or press **Auto** to clear. An explicit `Width`/`Height` on the root element or `d:DesignWidth`/`d:DesignHeight` takes precedence (priority: explicit root size → design size → requested size → content size).
 - **Click → code**: click an element in the image and the editor cursor moves to that element's start tag and the element is highlighted. For overlapping elements the innermost / topmost drawn one is chosen. Elements created inside a template are treated as the control itself.
 - **Code → preview**: move the editor cursor and the innermost element containing the cursor is highlighted.
-- **Status bar**: `Rendering XAML` / `XAML OK` / `XAML OK (N warnings)` / `XAML error`. Hover over the warnings to see the list.
+- **Warning list**: when the render changed or removed something, **⚠ N warnings** appears at the top of the preview. Expand it to see the list; clicking an item that has a line number jumps to that line (the status-bar tooltip has the same list).
+- **Status bar**: `Rendering XAML` / `XAML OK` / `XAML OK (N warnings)` / `XAML error`. Clicking the error indicator opens the Problems panel; clicking "Waiting for project code approval" / "Project build required" runs Refresh (asks the approval question again).
+- **Editor title icons**: opening a `.xaml` shows an Open Preview icon in the editor title bar, and a Refresh icon while a preview is open.
 
 ## 5. User controls and trust (Workspace Trust)
 
@@ -96,7 +98,7 @@ If your XAML contains the project's own controls (`xmlns:local="clr-namespace:My
 Tier 1 **runs the project's user code (constructors, etc.) on this PC as it is**. There is no sandbox. It is therefore enabled only when **all** of the following hold.
 1. **A trusted folder** (VS Code Workspace Trust). A window with a file opened but no folder is treated as "trusted" by VS Code by default, but project code does not run because of item 2.
 2. **The XAML and the `.csproj` are inside an opened workspace folder** (if you opened only a subfolder of a repository, the project in a parent folder is not run). The host keeps the same boundary and never looks for a `.csproj`/`bin` outside it.
-3. **Per-project approval**: the first time you preview, you are asked once "May this project's code run?" and the answer is remembered in the workspace. Even in a trusted folder, **a DLL committed to the repository's `bin/` can run the moment you open a .xaml, without any build**. Allow only projects whose origin you know. Clear the records with the command **WPF XAML: Reset Project Code Approvals**.
+3. **Per-project approval**: when the project's user controls are actually needed (a placeholder was used, or the render failed — XAML that uses only built-in controls is not asked about) you are asked once "May this project's code run?" and the answer is remembered in the workspace. Even in a trusted folder, **a DLL committed to the repository's `bin/` can run the moment you open a .xaml, without any build**. Allow only projects whose origin you know. Clear the records with the command **WPF XAML: Reset Project Code Approvals**.
 
 In untrusted folders, or for projects you have not allowed, no user code is loaded (Tier 0). Controls whose constructors access files/network/databases still do so while previewing, and may be slow or fail to draw. If a request does not finish within the time limit (30 seconds by default; a project with a large output folder takes a few seconds the first time it is loaded) the host is forcibly stopped and restarted on the next edit.
 

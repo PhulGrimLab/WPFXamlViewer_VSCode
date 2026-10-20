@@ -75,6 +75,10 @@ describe('웹뷰 메시지 확장 (X-M01, X-M02)', () => {
         assert.strictEqual(parseFromWebview({ type: 'setSize', width: '10', height: 10 }), undefined);
         assert.strictEqual(parseFromWebview({ type: 'setSize', width: 100.5, height: 10 }), undefined, '정수가 아님');
         assert.deepStrictEqual(parseFromWebview({ type: 'refresh' }), { type: 'refresh' }, '툴바 새로고침 버튼');
+        assert.deepStrictEqual(parseFromWebview({ type: 'gotoLine', line: 12 }), { type: 'gotoLine', line: 12 }, '경고 목록 항목 클릭');
+        for (const bad of [0, -1, 1.5, NaN, '3', null, 99_999_999]) {
+            assert.strictEqual(parseFromWebview({ type: 'gotoLine', line: bad }), undefined, `잘못된 줄 번호 ${String(bad)}`);
+        }
     });
 });
 

@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AutoBuildState, MissingBuildAction, WARNING_PROJECT_TIER0, decideMissingBuild, describeMissingBuild } from './autoBuild';
-import { CONFIG_AUTO_BUILD, CONFIG_AUTO_OPEN, CONFIG_SECTION, PREVIEW_VIEW_TYPE, RENDER_DEBOUNCE_MS } from './constants';
+import { COMMAND_REFRESH_PREVIEW, CONFIG_AUTO_BUILD, CONFIG_AUTO_OPEN, CONFIG_SECTION, PREVIEW_VIEW_TYPE, RENDER_DEBOUNCE_MS } from './constants';
 import { Debouncer, adaptiveDebounceMs } from './debouncer';
 import { toZeroBasedPosition } from './diagnostics';
 import { findNearestProject } from './dotnetCommands';
@@ -20,6 +20,9 @@ import { DOTNET_DESKTOP_RUNTIME_URL, dotNetRuntimeMissingMessage, isDotNetRuntim
 
 /** 진단/상태 표시에 쓰는 출처 이름. */
 const DIAGNOSTIC_SOURCE = 'WPF XAML Live Preview';
+
+/** 미리보기에 보여 주는 경고의 최대 개수. */
+const MAX_WARNINGS_SHOWN = 50;
 
 /** 폴더별 프로젝트 조회 캐시 유효 시간(ms). */
 const PROJECT_CACHE_MS = 3000;
@@ -217,7 +220,9 @@ export class PreviewController implements vscode.Disposable {
         const nonce = crypto.randomBytes(NONCE_BYTES).toString('hex');
         panel.webview.html = buildPreviewHtml(nonce, panel.webview.cspSource, getLanguage());
         panel.webview.onDidReceiveMessage((raw) => void this._handleWebviewMessage(raw));
+        void vscode.commands.executeCommand('setContext', 'wpfXamlViewer.previewOpen', true);
         panel.onDidDispose(() => {
+            void vscode.commands.executeCommand('setContext', 'wpfXamlViewer.previewOpen', false);
             this._panel = undefined;
             this._debouncer.cancel();
             this._diagnostics.clear();
@@ -246,6 +251,9 @@ export class PreviewController implements vscode.Disposable {
                 break;
             case 'refresh':
                 this.refresh();
+                break;
+            case 'gotoLine':
+                this._revealLine(message.line);
                 break;
             case 'setSize':
                 this._size = { width: message.width ?? undefined, height: message.height ?? undefined };
@@ -308,7 +316,6 @@ export class PreviewController implements vscode.Disposable {
         const gate = this._projectGate(document);
         this._setStatus(t('preview.rendering'), undefined);
         this._post({ type: 'busy' });
-        this._askConsentIfNeeded(gate);
         const sentAt = Date.now();
         this._client.renderLatest({
             lang: getLanguage(),
@@ -347,6 +354,8 @@ export class PreviewController implements vscode.Disposable {
 
     /** 성공 표시: 호스트가 변경/대체한 내용(경고)이 있으면 개수를 보여 주고 툴팁에 목록을 둔다. */
     private _showSuccess(warnings: RenderWarning[]): void {
+        // 경고 목록은 미리보기 안에도 보여 준다(이전에는 상태 표시줄 툴팁에만 있어 "왜 이렇게 그려졌는지" 알기 어려웠다). 너무 많으면 앞의 50개만.
+        this._post({ type: 'warnings', items: warnings.slice(0, MAX_WARNINGS_SHOWN).map((w) => ({ message: w.message, line: w.line ?? undefined })) });
         if (warnings.length === 0) {
             this._setStatus(t('preview.ok'), undefined);
             this._status.tooltip = undefined;
@@ -360,11 +369,14 @@ export class PreviewController implements vscode.Disposable {
     /** 렌더 실패 처리: 호스트 오류는 Problems에, 그 외(타임아웃/크래시/시작 불가)는 알림에 표시한다. */
     private _showFailure(document: vscode.TextDocument, error: Error): void {
         const missing = error instanceof HostRequestError ? this._missingBuildAction(document, error.projectReason, true) : 'none';
-        this._setStatus(t('preview.error'), new vscode.ThemeColor('statusBarItem.errorBackground'));
+        this._setStatus(t('preview.error'), new vscode.ThemeColor('statusBarItem.errorBackground'), 'workbench.actions.view.problems');
+        this._post({ type: 'warnings', items: [] });
         // 프로젝트 코드 실행을 아직 허용하지 않아 프로젝트 타입을 못 만든 것이 원인일 수 있다: 해결 방법을 함께 알려 준다.
-        const consentHint = this._projectGate(document).needsConsent ? `
+        const failureGate = this._projectGate(document);
+        const consentHint = failureGate.needsConsent ? `
 
 ${t('consent.hint')}` : '';
+        this._askConsentIfNeeded(failureGate); // 실패한 원인이 프로젝트 타입일 수 있다: 허용을 묻는다.
         this._post({ type: 'error', message: error.message + consentHint });
         if (missing !== 'none') {
             // 빌드 산출물이 없어 실패했다: 자동 빌드(또는 빌드 필요/실패 안내)로 이어간다. 원래 XAML 오류도 Problems에 함께 남긴다.
@@ -404,6 +416,12 @@ ${t('consent.hint')}` : '';
             // 산출물 없음 여부를 아래에서 판단.
         }
         const placeholdersShown = warnings.some((w) => w.code === WARNING_PROJECT_TIER0);
+        if (placeholdersShown) {
+            // 사용자 타입을 만들 수 없어 자리표시자를 썼다: 이때에만 코드 실행 허용을 묻는다(기본 컨트롤만 쓰는 XAML은 묻지 않는다).
+            this._askConsentIfNeeded(this._projectGate(document));
+        } else {
+            // 프로젝트 코드가 필요 없는 렌더.
+        }
         const action = this._missingBuildAction(document, reason, placeholdersShown);
         if (action !== 'none') {
             this._reportMissingBuild(document, action, false);
@@ -493,7 +511,7 @@ ${t('consent.hint')}` : '';
                 await this._consent.grant(key);
                 this._renderNow();
             } else {
-                this._setStatus(t('consent.denied'), undefined);
+                this._setStatus(t('consent.denied'), undefined, COMMAND_REFRESH_PREVIEW);
             }
         });
     }
@@ -513,6 +531,19 @@ ${t('consent.hint')}` : '';
             this._projectCache.clear();
             this._renderNow();
         }
+    }
+
+    /** 경고 목록에서 누른 줄(1-base)로 미리보기 대상 문서의 커서를 옮기고 보여 준다. */
+    private _revealLine(line: number): void {
+        const document = this._document;
+        if (!document) {
+            return;
+        } else {
+            // 대상 문서 있음.
+        }
+        const lineIndex = Math.min(Math.max(line - 1, 0), Math.max(document.lineCount - 1, 0));
+        const position = new vscode.Position(lineIndex, 0);
+        void vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position), preserveFocus: false, viewColumn: vscode.ViewColumn.One });
     }
 
     /** 테스트용: 이 프로젝트(또는 워크스페이스 폴더)의 코드 실행을 허용한 것으로 기록한다. */
@@ -560,7 +591,7 @@ ${t('consent.hint')}` : '';
             this._setStatus(t('preview.buildRunning'), undefined);
         } else {
             // 자동 빌드를 하지 않는다(설정 꺼짐/미신뢰/실패 이력 등): 왜 미리보기가 안 되는지 알린다.
-            this._setStatus(t('preview.buildNeeded'), new vscode.ThemeColor('statusBarItem.errorBackground'));
+            this._setStatus(t('preview.buildNeeded'), new vscode.ThemeColor('statusBarItem.errorBackground'), COMMAND_REFRESH_PREVIEW);
             if (failed) {
                 this._post({ type: 'error', message });
             } else {
@@ -627,9 +658,11 @@ ${t('consent.hint')}` : '';
         void this._panel?.webview.postMessage(message);
     }
 
-    private _setStatus(text: string, background: vscode.ThemeColor | undefined): void {
+    /** 상태 표시줄 항목을 갱신한다. `command`를 주면 그 항목을 눌렀을 때 실행한다(오류면 Problems 패널, 허용/빌드 필요면 새로고침). */
+    private _setStatus(text: string, background: vscode.ThemeColor | undefined, command?: string): void {
         this._status.text = text;
         this._status.backgroundColor = background;
+        this._status.command = command;
         this._status.show();
     }
 }

@@ -69,5 +69,13 @@ describe('다국어 (X-L)', () => {
         assert.ok(!en.includes('체크무늬'));
         assert.ok(ko.includes('id="refresh"') && ko.includes('새로고침') && en.includes('id="refresh"') && en.includes('>&#x21BB; Refresh<'), '새로고침 버튼이 툴바 맨 앞에 있어야 한다');
         assert.ok(ko.indexOf('id="refresh"') < ko.indexOf('id="zoomOut"'));
+        // 접근성: 툴바 역할/라벨, 상태 영역의 aria-live, 경고 목록 영역, 지역화된 이미지 대체 텍스트
+        for (const [html, label, alt] of [[ko, '미리보기 도구 모음', 'XAML 미리보기'], [en, 'Preview toolbar', 'XAML preview']]) {
+            assert.ok(html.includes('role="toolbar"') && html.includes(`aria-label="${label}"`), '툴바 role/aria-label');
+            assert.ok(html.includes('role="status" aria-live="polite"'), '상태 영역 aria-live');
+            assert.ok(html.includes('id="warnings"') && html.includes('id="warningsList"'), '경고 목록 영역');
+            assert.ok(html.includes(`alt="${alt}"`), '이미지 대체 텍스트');
+            assert.ok(/<button id="zoomIn"[^>]*aria-label=/.test(html), '버튼 aria-label');
+        }
     });
 });

@@ -14,6 +14,9 @@ export const MAX_ZOOM = 8;
 /** 사용자가 지정할 수 있는 렌더 크기의 최대 픽셀(호스트 한도와 같다). */
 export const MAX_RENDER_SIZE = 8192;
 
+/** 줄 이동 요청으로 받아들이는 최대 줄 번호(터무니없는 값 차단). */
+const MAX_LINE_NUMBER = 10_000_000;
+
 /** 이미지 좌표계의 사각형(결과 PNG 픽셀). */
 export interface Rect { x: number; y: number; w: number; h: number }
 
@@ -50,7 +53,13 @@ export interface SetViewMessage {
     fit?: boolean;
 }
 
-export type ToWebviewMessage = ShowImageMessage | ShowErrorMessage | ShowBusyMessage | HighlightMessage | SetViewMessage;
+/** 확장 → 웹뷰: 이번 렌더의 경고 목록(빈 배열이면 숨김). line은 1-base이며 없을 수 있다. */
+export interface ShowWarningsMessage {
+    type: 'warnings';
+    items: { message: string; line?: number }[];
+}
+
+export type ToWebviewMessage = ShowImageMessage | ShowErrorMessage | ShowBusyMessage | HighlightMessage | SetViewMessage | ShowWarningsMessage;
 
 /** 웹뷰 → 확장: 이미지를 실제로 그렸다는 회신(테스트가 크기를 단언한다). */
 export interface ImageShownMessage {
@@ -80,13 +89,19 @@ export interface SetSizeMessage {
     height: number | null;
 }
 
+/** 웹뷰 → 확장: 경고 목록의 항목을 눌러 그 줄로 이동하길 요청(1-base). */
+export interface GotoLineMessage {
+    type: 'gotoLine';
+    line: number;
+}
+
 /** 웹뷰 → 확장: 다시 렌더 요청(툴바의 새로고침 버튼). */
 export interface RefreshMessage {
     type: 'refresh';
 }
 
 /** 웹뷰 → 확장 메시지. */
-export type FromWebviewMessage = ImageShownMessage | ClickMessage | ViewStateMessage | SetSizeMessage | RefreshMessage;
+export type FromWebviewMessage = ImageShownMessage | ClickMessage | ViewStateMessage | SetSizeMessage | RefreshMessage | GotoLineMessage;
 
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
@@ -124,6 +139,8 @@ export function parseFromWebview(raw: unknown): FromWebviewMessage | undefined {
                 : undefined;
         case 'refresh':
             return { type: 'refresh' };
+        case 'gotoLine':
+            return isFiniteNumber(m.line) && Number.isInteger(m.line) && m.line >= 1 && m.line <= MAX_LINE_NUMBER ? { type: 'gotoLine', line: m.line } : undefined;
         case 'setSize': {
             const width = parseSize(m.width);
             const height = parseSize(m.height);

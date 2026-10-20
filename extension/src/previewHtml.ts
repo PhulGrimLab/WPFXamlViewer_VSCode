@@ -30,6 +30,11 @@ export function buildPreviewHtml(nonce: string, cspSource: string, language: Lan
   #zoomLabel { min-width: 3.5em; text-align: center; }
   #status { min-height: 1.4em; padding: 2px 8px; }
   #status.error { color: var(--vscode-errorForeground); white-space: pre-wrap; }
+  #warnings { padding: 0 8px 4px; font-size: 0.95em; }
+  #warnings summary { cursor: pointer; color: var(--vscode-editorWarning-foreground, #cca700); }
+  #warnings ul { margin: 4px 0 0; padding-left: 18px; max-height: 8em; overflow: auto; }
+  #warnings li { margin: 1px 0; }
+  #warnings li.link { cursor: pointer; text-decoration: underline dotted; }
   #viewport { flex: 1; overflow: auto; padding: 8px; cursor: grab; }
   #viewport.dragging { cursor: grabbing; }
   #stage { position: relative; display: none; }
@@ -42,25 +47,26 @@ export function buildPreviewHtml(nonce: string, cspSource: string, language: Lan
 </style>
 </head>
 <body>
-<div id="toolbar">
-  <button id="refresh" title="${L('web.refreshTitle')}">&#x21BB; ${L('web.refresh')}</button>
-  <button id="zoomOut" title="${L('web.zoomOut')}">−</button>
+<div id="toolbar" role="toolbar" aria-label="${L('web.toolbarLabel')}">
+  <button id="refresh" title="${L('web.refreshTitle')}" aria-label="${L('web.refreshTitle')}">&#x21BB; ${L('web.refresh')}</button>
+  <button id="zoomOut" title="${L('web.zoomOut')}" aria-label="${L('web.zoomOut')}">−</button>
   <span id="zoomLabel">100%</span>
-  <button id="zoomIn" title="${L('web.zoomIn')}">+</button>
-  <button id="zoomFit" title="${L('web.fit')}">${L('web.fitLabel')}</button>
-  <button id="zoom100" title="${L('web.actual')}">100%</button>
-  <select id="background" title="${L('web.background')}">
+  <button id="zoomIn" title="${L('web.zoomIn')}" aria-label="${L('web.zoomIn')}">+</button>
+  <button id="zoomFit" title="${L('web.fit')}" aria-label="${L('web.fit')}">${L('web.fitLabel')}</button>
+  <button id="zoom100" title="${L('web.actual')}" aria-label="${L('web.actual')}">100%</button>
+  <select id="background" title="${L('web.background')}" aria-label="${L('web.background')}">
     <option value="checker">${L('web.checker')}</option>
     <option value="white">${L('web.white')}</option>
     <option value="dark">${L('web.dark')}</option>
   </select>
-  <label>W <input id="sizeW" inputmode="numeric" placeholder="${L('web.auto')}"></label>
-  <label>H <input id="sizeH" inputmode="numeric" placeholder="${L('web.auto')}"></label>
+  <label>W <input id="sizeW" inputmode="numeric" aria-label="W" placeholder="${L('web.auto')}"></label>
+  <label>H <input id="sizeH" inputmode="numeric" aria-label="H" placeholder="${L('web.auto')}"></label>
   <button id="applySize" title="${L('web.applyTitle')}">${L('web.apply')}</button>
   <button id="autoSize" title="${L('web.autoTitle')}">${L('web.auto')}</button>
 </div>
-<div id="status">${L('web.openDoc')}</div>
-<div id="viewport" class="bg-checker"><div id="stage"><img id="image" alt="XAML preview"><div id="highlight"></div></div></div>
+<div id="status" role="status" aria-live="polite">${L('web.openDoc')}</div>
+<details id="warnings" hidden><summary id="warningsSummary"></summary><ul id="warningsList"></ul></details>
+<div id="viewport" class="bg-checker"><div id="stage"><img id="image" alt="${L('web.imageAlt')}"><div id="highlight"></div></div></div>
 <script nonce="${nonce}">
   const MIN_ZOOM = ${MIN_ZOOM}, MAX_ZOOM = ${MAX_ZOOM}, ZOOM_STEP = ${ZOOM_STEP}, DRAG_THRESHOLD = ${DRAG_THRESHOLD_PX};
   const vscode = acquireVsCodeApi();
@@ -127,6 +133,8 @@ export function buildPreviewHtml(nonce: string, cspSource: string, language: Lan
       image.src = 'data:image/png;base64,' + m.png;
     } else if (m.type === 'error') {
       status.className = 'error'; status.textContent = m.message;
+    } else if (m.type === 'warnings') {
+      showWarnings(m.items);
     } else if (m.type === 'busy') {
       status.className = ''; status.textContent = ${JSON.stringify(tIn(language, 'web.busy'))};
     } else if (m.type === 'highlight') {
@@ -175,6 +183,20 @@ export function buildPreviewHtml(nonce: string, cspSource: string, language: Lan
     }
   });
 
+  const WARNINGS_LABEL = ${JSON.stringify(tIn(language, 'web.warnings'))}, WARNINGS_HINT = ${JSON.stringify(tIn(language, 'web.warningsHint'))};
+  function showWarnings(items) {
+    const box = $('warnings'), list = $('warningsList');
+    list.textContent = '';
+    if (!Array.isArray(items) || items.length === 0) { box.hidden = true; return; }
+    $('warningsSummary').textContent = '\u26A0 ' + WARNINGS_LABEL.replace('{0}', String(items.length)) + ' ' + WARNINGS_HINT;
+    for (const item of items) {
+      const li = document.createElement('li');
+      li.textContent = (item.line ? 'L' + item.line + ' ' : '') + item.message;
+      if (item.line) { li.className = 'link'; li.addEventListener('click', () => vscode.postMessage({ type: 'gotoLine', line: item.line })); }
+      list.appendChild(li);
+    }
+    box.hidden = false;
+  }
   $('refresh').addEventListener('click', () => { vscode.postMessage({ type: 'refresh' }); });
   const parseSize = (text) => { const v = parseInt(text, 10); return Number.isFinite(v) && v > 0 ? v : null; };
   $('applySize').addEventListener('click', () => {
