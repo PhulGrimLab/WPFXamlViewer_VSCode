@@ -1,8 +1,11 @@
 # WPFXamlViewer_VSCode
+
+한국어 · [English](./README.en.md)
+
 **WPF XAML Live Preview** (확장 ID `phulgrimlab.wpf-xaml-live-preview`) — VS Code에서 `.xaml` 파일을 편집하면서 **실제 WPF 렌더링 결과**를 옆 패널에서 실시간으로 확인한다.
 
 > 목적: **Visual Studio 없이 VS Code에서 .NET 10 SDK로 WPF 프로젝트를 UI까지 개발**한다. **Windows 전용.**
-> 사용법과 제한 사항은 **[doc/User_Guide.md](./doc/User_Guide.md)**.
+> 사용법과 제한 사항은 **[doc/User_Guide.md](./doc/User_Guide.md)** ([English](./doc/User_Guide.en.md)).
 >
 > 상태: **M0~M6 구현 완료**([doc/05](./doc/05_Clean_Machine_Verification.md)).
 > 드래그 앤 드롭 디자이너와 XAML 자동 완성은 이 확장의 범위가 아니다. 현황/이어서 작업하는 방법은 [doc/04](./doc/04_Progress_Status_And_Next_Steps.md).
@@ -85,6 +88,7 @@ cd extension; npm install; cd ..
 | 문서 | 내용 |
 |---|---|
 | [doc/User_Guide.md](./doc/User_Guide.md) | **사용자 가이드: 개발 흐름, 미리보기 기능, 사용자 컨트롤/신뢰, 변환 규칙, 제한, 문제 해결** |
+| [doc/User_Guide.en.md](./doc/User_Guide.en.md) | 사용자 가이드 영문판(English) |
 | [doc/04_Progress_Status_And_Next_Steps.md](./doc/04_Progress_Status_And_Next_Steps.md) | **진행 상태, 다른 PC에서 이어가기, 미검증 항목, 다음 작업** |
 | [doc/05_Clean_Machine_Verification.md](./doc/05_Clean_Machine_Verification.md) | VS 없는 깨끗한 PC 검증 체크리스트(미실행) |
 | [doc/06_Release_Process.md](./doc/06_Release_Process.md) | 릴리스 절차(GitHub Release `.vsix`), 설치 안내, 신뢰/보안 문구 |

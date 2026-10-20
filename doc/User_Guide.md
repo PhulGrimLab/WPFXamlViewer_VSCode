@@ -1,5 +1,7 @@
 # WPF XAML Live Preview 사용자 가이드
 
+한국어 · [English User Guide](./User_Guide.en.md)
+
 > 이 확장의 목적: **Visual Studio 없이 VS Code에서 .NET 10 SDK로 WPF 프로젝트를 개발**하면서, XAML 화면(UI)을
 > 편집 중에 실제 WPF 렌더링 결과로 바로 확인하는 것. Windows 전용.
 
@@ -22,7 +24,7 @@
 
 1. 프로젝트 만들기: `dotnet new wpf -n MyApp -o MyApp --framework net10.0` 후 VS Code로 폴더를 연다.
 2. `MainWindow.xaml`을 열고 명령 팔레트(`Ctrl+Shift+P`)에서 **WPF XAML: Open Preview** 를 실행한다. 에디터 옆에 미리보기가 열린다. 기본값에서는 `.xaml` 파일을 열거나 다른 `.xaml` 탭으로 옮기기만 해도 미리보기가 자동으로 열리고(이미 열린 패널은 재사용해 갱신), 끄려면 설정 `wpfXamlViewer.autoOpenPreview`를 `false`로 한다.
-3. XAML을 편집한다. 300ms 동안 입력이 멈추면 자동으로 다시 그린다. 오류가 있으면 Problems 패널에 표시되고 미리보기는 마지막 정상 이미지를 유지한다.
+3. XAML을 편집한다. 입력이 잠시(마지막 렌더 시간에 맞춰 100~300ms) 멈추면 자동으로 다시 그린다. 오류가 있으면 Problems 패널에 표시되고 미리보기는 마지막 정상 이미지를 유지한다.
 4. 사용자 컨트롤(`local:MyControl`)을 실제로 그리려면 프로젝트를 한 번 **빌드**(`dotnet build`)하고 **폴더를 신뢰**한다(5절).
 5. 앱 실행/디버그는 `dotnet run` 또는 C# 확장의 디버거(F5)를 쓴다. 코드(`.cs`)를 바꿨다면 다시 `dotnet build` 해야 미리보기의 사용자 컨트롤에 반영된다.
 
@@ -67,6 +69,7 @@
 
 ## 4. 미리보기 화면
 
+- **툴바**: **↻ 새로고침**(다시 렌더. 위 명령 참고), 축소/확대, **맞춤**, **100%**, 배경, W/H 크기, **적용**/**자동**.
 - **줌**: 툴바의 −/+, **맞춤**(창에 맞춤), **100%**. `Ctrl+마우스 휠`은 포인터 위치를 기준으로 확대/축소한다. 200% 이상은 픽셀을 그대로 키워 보여 준다.
 - **이동(팬)**: 이미지를 마우스로 끌어 이동한다. 거의 움직이지 않고 떼면 클릭으로 취급한다.
 - **배경**: 체크무늬(투명 확인) / 흰색 / 어둡게.
@@ -89,6 +92,18 @@ XAML에 프로젝트의 사용자 컨트롤(`xmlns:local="clr-namespace:MyApp"`)
 - 컨트롤 생성자가 예외를 던지면 그 컨트롤만 **주황색 오류 박스**(예외 요약)로 바뀌고 나머지는 그려진다.
 - 컨트롤 안에서 `DesignerProperties.GetIsInDesignMode`로 분기하는 코드는 디자인 모드(`true`)로 동작한다.
 - `App.xaml`의 `Application.Resources`(병합 사전 포함)가 문서의 리소스 아래 단계로 자동 적용되어 `{StaticResource}`가 풀린다.
+
+### 자리표시자 모드(Tier 0)에서 대체/제거하는 것
+프로젝트 DLL을 불러오지 않은 상태(허용 전, 빌드 전, 미신뢰)에서는 만들 수 없는 타입/리소스를 참조하는 패턴 하나 때문에 미리보기 전체가 실패할 수 있다. 아래 흔한 패턴은 **그 부분만** 대체/제거하고 나머지를 그리며, 바꾼 내용은 경고로 알린다.
+
+- 컨버터: `Converter={StaticResource 사용자컨버터}`, `MultiBinding Converter="{StaticResource …}"`, `<Binding.Converter><local:Conv/></Binding.Converter>`, `<MultiBinding.Converter>`(MultiBinding은 그것을 담은 속성 요소째 제거)
+- 사용자 타입 리소스를 값으로 쓰는 속성(`ItemTemplateSelector`, 사용자 브러시 등), 자리표시자가 들어갈 수 없는 `ItemsPanelTemplate`
+- 사용자 정의 마크업 확장(`{local:Loc Title}`, `Converter={local:Conv}`) → `{x:Null}`(또는 속성 제거), 요소 형태 `<TextBlock.Text><local:Loc Key="x"/></TextBlock.Text>` → 그 속성 요소 제거
+- 사용자 타입의 `{x:Static}`과 첨부 속성, 사용자 타입 `x:Array`
+- 외부 라이브러리(WPF UI, `i:Interaction.Triggers` 같은 Blend 동작 등)의 컨트롤·첨부 속성 — 프로젝트에 속한 XAML일 때만(프로젝트 없는 낱개 XAML의 오타는 계속 오류로 보고한다)
+- `{StaticResource 없는키}`(라이브러리 테마 사전의 키 등): 그 속성만 빼고 계속
+
+프로젝트를 빌드하고 코드 실행을 허용하면(Tier 1) 모두 실제 컨트롤로 그려진다.
 
 ### 보안 — 반드시 읽어 주세요
 Tier 1은 프로젝트의 **사용자 코드(생성자 등)를 이 PC에서 그대로 실행**한다. 샌드박스는 없다. 그래서 다음을 **모두** 만족할 때만 켜진다.
@@ -155,7 +170,8 @@ Tier 1은 프로젝트의 **사용자 코드(생성자 등)를 이 PC에서 그�
 | 사용자 컨트롤이 붉은 박스로 보임 | 상태 표시줄 경고의 `ProjectTier0` 이유를 본다: 폴더 미신뢰 → 신뢰, 산출물 없음 → `dotnet build`. |
 | 사용자 컨트롤이 주황 박스로 보임 | 생성자 예외다. 경고 목록에 예외 요약이 있다. 생성자에서 디자인 모드를 고려하도록 고친다. |
 | `{StaticResource X}` 오류 | 리소스가 `App.xaml` 또는 문서/병합 사전 안에 있어야 한다(코드 비하인드에서 추가하는 리소스는 볼 수 없다). |
-| 화면이 갱신되지 않음 | Problems 패널과 출력 채널 **WPF XAML Live Preview** 를 확인한다. 호스트가 죽으면 다음 편집에서 자동으로 다시 시작한다. |
+| 화면이 갱신되지 않음 | Problems 패널과 출력 채널 **WPF XAML Live Preview** 를 확인하고 **↻ 새로고침**을 누른다. 호스트가 죽으면 다음 편집에서 자동으로 다시 시작한다. |
+| "이 프로젝트의 코드 실행 허용" 질문이 나오지 않았거나 닫았음 | 미리보기 툴바의 **↻ 새로고침**(또는 **WPF XAML: 미리보기 새로고침**)을 누르면 다시 묻는다. |
 
 ## 9. 로그
 

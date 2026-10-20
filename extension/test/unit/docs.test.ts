@@ -45,3 +45,39 @@ describe('User_Guide ↔ package.json (X-P01)', () => {
         }
     });
 });
+
+/** 영문 사용자 가이드(doc/User_Guide.en.md)도 같은 기준으로 매니페스트와 어긋나지 않는지 검사한다(영어 문구로 푼 매니페스트와 비교). */
+describe('User_Guide.en ↔ package.json (X-P02)', () => {
+    const guideEn = fs.readFileSync(path.join(REPO_ROOT, 'doc', 'User_Guide.en.md'), 'utf8');
+    const manifestEn = loadManifest<{
+        contributes: { commands: { command: string; title: string }[]; configuration?: { properties?: Record<string, unknown> } };
+    }>('en');
+
+    it('X-P02a 모든 명령 ID와 영어 제목이 영문 가이드에 있다', () => {
+        for (const c of manifestEn.contributes.commands) {
+            assert.ok(guideEn.includes(`\`${c.command}\``), `영문 가이드에 명령 ID가 없음: ${c.command}`);
+            assert.ok(guideEn.includes(c.title), `영문 가이드에 명령 제목이 없음: ${c.title}`);
+        }
+    });
+
+    it('X-P02b 모든 설정 키가 영문 가이드에 있고, 가이드가 언급하는 wpfXamlViewer.* 이름은 모두 package.json에 있다', () => {
+        const settings = Object.keys(manifestEn.contributes.configuration?.properties ?? {});
+        for (const key of settings) {
+            assert.ok(guideEn.includes(key), `영문 가이드에 설정이 없음: ${key}`);
+        }
+        const known = new Set<string>([...manifestEn.contributes.commands.map((c) => c.command), ...settings]);
+        for (const name of new Set(guideEn.match(/wpfXamlViewer\.[A-Za-z0-9_.]+/g) ?? [])) {
+            assert.ok(known.has(name), `영문 가이드의 ${name} 은(는) package.json에 없다`);
+        }
+    });
+
+    it('X-P02c 한국어/영어 가이드와 두 README가 서로를 가리킨다', () => {
+        const guideKo = fs.readFileSync(path.join(REPO_ROOT, 'doc', 'User_Guide.md'), 'utf8');
+        assert.ok(guideKo.includes('User_Guide.en.md') && guideEn.includes('User_Guide.md'));
+        const readmeKo = fs.readFileSync(path.join(REPO_ROOT, 'README.md'), 'utf8');
+        const readmeEn = fs.readFileSync(path.join(REPO_ROOT, 'README.en.md'), 'utf8');
+        assert.ok(readmeKo.includes('README.en.md') && readmeEn.includes('README.md'));
+        const extensionReadme = fs.readFileSync(path.join(REPO_ROOT, 'extension', 'README.md'), 'utf8');
+        assert.ok(extensionReadme.includes('User_Guide.en.md') && extensionReadme.includes('User_Guide.md') && extensionReadme.includes('# 한국어'));
+    });
+});
